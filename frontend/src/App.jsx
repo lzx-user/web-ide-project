@@ -22,6 +22,16 @@ function App() {
     { id: Date.now(), type: 'info', text: '# 终端已就绪。点击顶部运行按钮执行代码。' }
   ]);
 
+  // T-07 前端监听编辑器内容并向服务器发送变更
+  // 7.1 编辑器内容变化时，触发 handleRunCode 函数，向后端发送当前代码。
+  const handleCodeChange = (newCode) => {
+    // console.log("📸 [总部确认]：收到车间代码，准备拨号发给后端！");
+    // 1. 同步更新 currentCode 状态，保持编辑器内容和状态一致。
+    setCurrentCode(newCode);
+    // 2. 发送给后端
+    socket.emit('codeChange', newCode);
+  }
+
   // 核心函数：触发代码运行
   const handleRunCode = async () => {
     if (!currentCode.trim()) return;
@@ -69,7 +79,7 @@ function App() {
     })
     // 当组件卸载(比如关闭页面)时，主动挂断电话
     return () => {
-      socket.disconnect();
+      // socket.disconnect();
     }
   }, [])
 
@@ -79,14 +89,15 @@ function App() {
       {/* 把状态和修改状态的方法，当做参数 (Props) 传给侧边栏 */}
       <Sidebar activeFile={activeFile} setActiveFile={setActiveFile} />
 
-      {/* 🟢 T-02 任务核心 2：右侧主工作区 (占据剩余全部宽度) */}
+      {/* {flex-1：确保编辑器能填满右侧剩余的所有空间，不留白边。} */}
       <div className="flex-1 flex flex-col">
 
         {/* 将方法作为 Props 传递 */}
         <Header activeFile={activeFile} onRunCode={handleRunCode} isRunning={isRunning} />
 
         {/* 编辑器需要 onChange 事件将用户输入同步给 currentCode 状态 */}
-        <CodeEditor code={currentCode} setCode={setCurrentCode} />
+        {/* 7.2 把 handleCodeChange 包装成 setCode 传给子组件 */}
+        <CodeEditor code={currentCode} setCode={handleCodeChange} />
 
         {/* 终端接收最新的日志数组进行渲染 */}
         <Terminal logs={terminalLogs} />

@@ -26,7 +26,12 @@ const io = new Server(server, {
 // 6.4 监听客户端连接事件
 io.on('connection', (socket) => {
   console.log('user connected');
-  // 监听挂断事件
+  // 7.1 监听前端刚才发出的 'codeChange' 频道的消息
+  socket.on('codeChange', (newCode) => {
+    console.log(newCode); // 这里我们先简单地在后端控制台打印一下收到的代码，确认通信正常。
+  })
+
+  // 6.4.1 监听挂断事件
   socket.on('disconnect', () => {
     console.log('user disconnected');
   })

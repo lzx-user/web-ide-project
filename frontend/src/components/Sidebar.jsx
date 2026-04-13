@@ -30,8 +30,4 @@ export default function Sidebar({ activeFile, setActiveFile }) {
       </div>
     </div>
   );
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> 77316cdc99d53785e0e0eea7ba7a838b30b3d428
