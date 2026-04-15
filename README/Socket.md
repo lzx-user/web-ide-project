@@ -386,3 +386,109 @@ connect
 10
 11
 ```
+
+# 广播活动
+
+Socket.IO 可以轻松地向所有已连接的客户端发送事件。
+
+
+
+> [!CAUTION]
+>
+> 请注意，广播功能**仅限服务器端**使用。
+
+## 致所有已连接的
+
+![向所有已连接的客户端广播](https://socket.io/images/broadcasting.png)
+
+```js
+io.emit("hello", "world");
+```
+
+
+
+> [!WARNING]
+>
+> 当前已断开连接（或正在重新连接）的客户端将不会收到此事件。是否将此事件存储在某个位置（例如数据库中）取决于您的具体使用场景。
+
+## 除
+
+如果你想向除特定发送套接字之外的所有人发送消息，我们有一个`broadcast`标志可以指定从该套接字发送消息：
+
+![向除发送者之外的所有已连接客户端广播](https://socket.io/images/broadcasting2.png)
+
+```js
+io.on("connection", (socket) => {
+  socket.broadcast.emit("hello", "world");
+});
+```
+
+在上面的示例中，使用`socket.emit("hello", "world")`（不带标志）会将事件发送到“客户端 A”。您可以在[速查表](https://socket.io/docs/v4/emit-cheatsheet/)`broadcast`中找到发送事件的所有方法列表。
+
+## 
+
+从 Socket.IO 4.5.0 开始，您现在可以向多个客户端广播事件，并期望收到每个客户端的确认：
+
+```js
+io.timeout(5000).emit("hello", "world", (err, responses) => {
+  if (err) {
+    // some clients did not acknowledge the event in the given delay
+  } else {
+    console.log(responses); // one response per client
+  }
+});
+```
+
+
+
+支持所有广播形式：
+
+- 在房间里
+
+```js
+io.to("room123").timeout(5000).emit("hello", "world", (err, responses) => {
+  // ...
+});
+```
+
+
+
+- 特定`socket`
+
+```js
+socket.broadcast.timeout(5000).emit("hello", "world", (err, responses) => {
+  // ...
+});
+```
+
+
+
+- 在命名空间中
+
+```js
+io.of("/the-namespace").timeout(5000).emit("hello", "world", (err, responses) => {
+  // ...
+});
+```
+
+
+
+## 使用多个 Socket.IO
+
+广播功能也适用于多个 Socket.IO 服务器。
+
+你只需要将默认适配器替换为[Redis 适配器](https://socket.io/docs/v4/redis-adapter/)或其他[兼容的适配器即可](https://socket.io/docs/v4/adapter/)。
+
+![使用 Redis 进行广播](https://socket.io/images/broadcasting-redis.png)
+
+在某些情况下，您可能只想向连接到当前服务器的客户端广播消息。您可以使用以下`local`标志来实现此目的：
+
+```js
+io.local.emit("hello", "world");
+```
+
+
+
+![使用 Redis 进行本地广播](https://socket.io/images/broadcasting-redis-local.png)
+
+为了在广播时针对特定客户端，请参阅有关[房间的](https://socket.io/docs/v4/rooms/)文档。

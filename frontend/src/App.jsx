@@ -6,10 +6,7 @@ import Terminal from './components/Terminal';
 // T-06 后端的地址（比如 `http://localhost:3000`）发起连接请求。
 // 6.1 引入刚刚装的拨号盘
 import { useEffect } from 'react';
-import { io } from 'socket.io-client';
-
-// 6.2 创建一个全局的 Socket 实例 也就是拨号！目标地址是你后端的 3000 端口
-const socket = io('http://localhost:3000');
+import socket from './socket'; // 引入我们刚刚建立的 Socket 连接实例
 
 function App() {
   const [activeFile, setActiveFile] = useState('index.js');
@@ -31,6 +28,7 @@ function App() {
     // 2. 发送给后端
     socket.emit('codeChange', newCode);
   }
+
 
   // 核心函数：触发代码运行
   const handleRunCode = async () => {

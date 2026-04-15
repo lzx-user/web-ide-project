@@ -54,8 +54,6 @@ server.listen(PORT, () => {
 });
 ```
 
-![image-20260412182114765](C:\Users\林子霞\AppData\Roaming\Typora\typora-user-images\image-20260412182114765.png)
-
 ### **第二步：前端“拨号”**。
 
 前端的 React 项目里引入客户端的包，朝着后端的地址（比如 `http://localhost:3000`）发起连接请求。
@@ -106,6 +104,4 @@ function App() {
 
 电话接通的一瞬间，后端触发刚刚写好的监听事件，在控制台打印出一句 `user connected`。
 
-![image-20260412193840415](C:\Users\林子霞\AppData\Roaming\Typora\typora-user-images\image-20260412193840415.png)
-
-![image-20260412193916908](C:\Users\林子霞\AppData\Roaming\Typora\typora-user-images\image-20260412193916908.png)
+![image-20260415151125093](C:\Users\林子霞\AppData\Roaming\Typora\typora-user-images\image-20260415151125093.png)

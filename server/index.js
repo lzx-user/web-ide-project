@@ -8,6 +8,7 @@ const http = require('http'); // Node.js 自带的模块，不用 npm install
 // 6.1 导入socket.io
 const { Server } = require('socket.io');
 
+
 const app = express();
 // 开启跨域允许前端 (5173端口) 访问
 app.use(cors());
@@ -25,15 +26,18 @@ const io = new Server(server, {
 })
 // 6.4 监听客户端连接事件
 io.on('connection', (socket) => {
-  console.log('user connected');
+  console.log('A user connected:', socket.id); // 打印连接的用户ID，方便调试
   // 7.1 监听前端刚才发出的 'codeChange' 频道的消息
   socket.on('codeChange', (newCode) => {
-    console.log(newCode); // 这里我们先简单地在后端控制台打印一下收到的代码，确认通信正常。
+    // console.log(newCode); // 这里我们先简单地在后端控制台打印一下收到的代码，确认通信正常。
+    // 8.1 使用socket.broadcast.emit来把这个消息广播给除了自己以外的所有连接到这个服务器的客户端
+    socket.broadcast.emit('codeChange', newCode);
   })
+
 
   // 6.4.1 监听挂断事件
   socket.on('disconnect', () => {
-    console.log('user disconnected');
+    console.log('user disconnected', socket.id);
   })
 })
 
