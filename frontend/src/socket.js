@@ -8,11 +8,12 @@ import { io } from 'socket.io-client';
 
 // T-09 引入 JWT 与 Room 机制，实现房间隔离
 // 大步骤 3：前端携带凭据发起连接
-// 初始化为空的socket变量，等用户加入房间后才真正建立连接并赋值
+// 1. 初始化为空的socket变量，等用户加入房间后才真正建立连接并赋值
 export let socket = null;
 
+// 2. 用户在大厅输入完毕并拿到Token 后，再调用这个函数去连接
 export const connectSocket = (roomId, token) => {
-  // 连接后端，并带上我们的“房卡”和“目的地”
+  // 携带凭据和房间号，向后端 3000 端口发起长连接
   // 关键：必须指定后端的具体地址和端口
   socket = io('http://localhost:3000', {
     auth: { token: token },  // 塞入凭据 (对应后端的 socket.handshake.auth)

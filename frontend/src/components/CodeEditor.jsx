@@ -10,7 +10,7 @@ import { socket } from '../socket'; // 引入我们刚刚建立的 Socket 连接
 
 
 
-// 这里的 { setCode } 就是接收总部传下来的那个 handleCodeChange 方法的引用，
+// 接收父组件 (App.jsx) 传过来的 socket 实例
 export default function CodeEditor({ socket }) {
   // 本地存储代码的状态
   const [code, setCode] = useState('// 请在此输入代码...');
@@ -26,13 +26,13 @@ export default function CodeEditor({ socket }) {
       if (socket) {
         socket.emit('codeChange', newCode);
       }
-    }, 500),
-    []
+    }, 500),  // 500毫秒防抖
+    [socket]
   )
 
   // 8.4 监听服务器广播的代码变更(接收端)
   useEffect(() => {
-    if (!token) return;
+    if (!socket) return;  // 如果还没有连接成功，先不监听
 
     const handleReceiveChange = (newCode) => {
       // 代码更新来自于其他人推送
@@ -48,9 +48,9 @@ export default function CodeEditor({ socket }) {
     return () => {
       socket.off('codeChange', handleReceiveChange);
     }
-  }, [])
+  }, [socket])  // 依赖 socket 变化
 
-  // 处理编辑器的onChange事件(发送端)
+  // 处理本地编辑器的onChange事件(发送端)
   const handleEditorChange = (value) => {
     // 检查锁状态
     if (isRemoteUpdate.current) {

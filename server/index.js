@@ -105,7 +105,7 @@ io.on('connection', (socket) => {
   // 6.4.1 监听挂断事件
   socket.on('disconnect', () => {
     // console.log('user disconnected', socket.id);
-    console.log(`[房间 ${roomId}] 用户 ${user.username} 已离开`);
+    console.log(`[房间 ${roomId}] 用户 ${username} 已离开`);
   })
 })
 

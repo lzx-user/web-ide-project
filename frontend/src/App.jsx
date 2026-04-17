@@ -12,7 +12,7 @@ import { socket, connectSocket } from './socket';
 function App() {
   const [activeFile, setActiveFile] = useState('index.js');
   // 新增：保存当前编辑器里的代码
-  const [currentCode, setCurrentCode] = useState('console.log("Hello, 全栈世界!");');
+  const [currentCode, setCurrentCode] = useState('');
   // 新增：防抖状态，标记是否正在请求后端
   const [isRunning, setIsRunning] = useState(false);
   // 新增：终端日志状态变更为可变状态
