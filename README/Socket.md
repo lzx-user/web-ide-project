@@ -5,6 +5,10 @@ Socket.IO 由两部分组成：
 - [`socket.io`](https://www.npmjs.com/package/socket.io)与 Node.js HTTP 服务器（软件包）集成（或挂载）的服务器
 - 一个在浏览器端加载的客户端库（[`socket.io-client`](https://www.npmjs.com/package/socket.io-client)软件包）
 
+`io` 代表整个服务器（总机）。
+
+`socket` 代表当前连进来的这个具体的客户端（分机）。
+
 开发过程中，`socket.io`客户端会自动为我们提供服务，这一点我们稍后会看到，所以目前我们只需要安装一个模块：
 
 ```text
