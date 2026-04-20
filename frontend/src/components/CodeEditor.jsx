@@ -9,11 +9,11 @@ import { socket } from '../socket'; // 引入我们刚刚建立的 Socket 连接
 // 内部逻辑： 它未来需要把写好的代码发送给后端。
 
 
-
 // 接收父组件 (App.jsx) 传过来的 socket 实例
-export default function CodeEditor({ socket }) {
+export default function CodeEditor({ socket, onMount }) {
   // 本地存储代码的状态
   const [code, setCode] = useState('// 请在此输入代码...');
+
 
   // 8.2 拦截：用于区分本地手动输入 还是 远程Socket 推送的代码更新
   // 默认为 false, 代表本地输入
@@ -75,6 +75,8 @@ export default function CodeEditor({ socket }) {
         // 第三步实现：Monaco Editor 一旦发现内容变了，立刻执行 setCode
         // 这里的 value 就是用户刚打进去的最新的那一串代码
         onChange={handleEditorChange} // 监听编辑器内容变化事件，触发 handleEditorChange 函数
+        onClick={() => setEditorMode(EditorMode.Editor)}
+        onMount={onMount}  /* 关键：将内部的 onMount 暴露给父组件 App.jsx */
         options={{
           fontSize: 16,
           minimap: { enabled: false },   // 关掉右侧小地图，小屏幕下节省空间。

@@ -23,6 +23,7 @@ npm install socket.io
 原本 Express 是直接通过 `app.listen` 启动的。但是 `socket.io` 不能直接挂在 Express 上，它需要依附在 Node.js 更底层的原生 `http` 模块上。所以我们需要稍微改造一下地基。
 
 ```jsx
+// index.js
 const http = require('http'); // Node.js 自带的模块，不用 npm install
 // 6. 后端引入 socket.io 建立长连接服务
 // 6.1 导入socket.io
@@ -71,6 +72,7 @@ npm install socket.io-client
 #### 2.2 拨打后端的电话
 
 ```jsx
+// App.jsx
 // 1. 在文件最上面，引入刚刚装的拨号盘
 import { useEffect } from 'react';
 import { io } from 'socket.io-client';

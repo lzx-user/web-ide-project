@@ -15,7 +15,7 @@ const jwt = require('jsonwebtoken');
 const app = express();
 // 开启跨域允许前端 (5173端口) 访问
 app.use(cors());
-// 解析 application/json 格式的请求体
+// 解析 application/json 格式的请求体 (JSON 解析中间件)
 app.use(express.json());
 
 // 6.2 改造地基：用原生的http模块包装express应用
@@ -109,14 +109,56 @@ io.on('connection', (socket) => {
   })
 })
 
+// T-10 保存接口
+app.post('/api/save', (req, res) => {
+  // 1. 拿到从前端body中传过来的数据
+  const { roomId, code, language } = req.body;
+  // 2. 简单安全的校验
+  if (!code) {
+    return res.status(400).join({ error: '代码不能为空' });
+  }
+
+  // 3. 生成一个 `.js` 临时文件并写入
+  // 把文件存在 server 目录下的 temp 文件夹里
+  const tempDir = path.join(__dirname, 'temp');
+  // 如果 temp 这个文件夹还不存在，就让 Node.js 自动建一个
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir);
+  }
+  // 拼接出最终的文件名，例如: project_1024.js
+  const filePath = path.join(tempDir, `${roomId}.js`);
+
+  // 4. 执行写入
+  try {
+    // 强制同步写入物理硬盘 (utf8 编码)
+    fs.writeFileSync(filePath, code, 'utf8');
+    // 在后端 Node 控制台打印一下，方便你观察
+    console.log(`${filePath}`);
+    // 5. 必须给前端返回一个成功的 200 响应，形成闭环
+    res.status(200).json({
+      success: true,
+      message: '代码已安全落盘'
+    })
+  } catch (error) {
+    console.log('写入失败', error);
+    // 如果硬盘满了或者没权限，返回 500 服务器错误
+    res.status(500).json({ error: '服务器保存文件失败' })
+  }
+})
+
 // 核心执行接口
 app.post('/api/run', (req, res) => {
-  const { code, language } = req.body;
+  const { roomId, code, language } = req.body;
 
-  // 目前仅支持 JavaScript 的执行演示
-  if (language !== 'javascript') {
-    return res.status(400).json({ error: 'Unsupported language' });
+  // 2. 简单安全的校验
+  if (!code) {
+    return res.status(400).join({ error: '代码不能为空' });
   }
+
+  // // 目前仅支持 JavaScript 的执行演示
+  // if (language !== 'javascript') {
+  //   return res.status(400).json({ error: 'Unsupported language' });
+  // }
 
   // 1. 生成临时文件路径
   const tempFilePath = path.join(__dirname, 'temp.js');

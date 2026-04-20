@@ -3,17 +3,65 @@ import Sidebar from './components/Sidebar'; // 引入侧边栏组件
 import Header from './components/Header';
 import CodeEditor from './components/CodeEditor';
 import Terminal from './components/Terminal';
+import Login from './components/Login';
 // T-06 后端的地址（比如 `http://localhost:3000`）发起连接请求。
 // 6.1 引入刚刚装的拨号盘
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { socket, connectSocket } from './socket';
+import { Editor } from '@monaco-editor/react';
 
+/**
+ * ================================================================
+ * 【Web IDE 前端应用 - 完整执行流程说明】
+ * ================================================================
+ * 
+ * 【初始化阶段】
+ * 1. App组件挂载时，useEffect从URL获取roomId（如果有的话）
+ * 2. 页面显示Login组件（登录大厅）
+ * 
+ * 【登录流程】
+ * 1. 用户在Login组件输入昵称和房间号
+ * 2. 点击"进入房间"按钮，调用handleJoinRoom(username, roomId)
+ * 3. handleJoinRoom流程：
+ *    (1) 调用 /api/join 后端接口，获取JWT Token
+ *    (2) Token保存到localStorage（用于WebSocket认证）
+ *    (3) 修改浏览器URL加入roomId参数
+ *    (4) 调用connectSocket建立WebSocket长连接
+ *    (5) 设置isJoined=true，界面切换到IDE编辑器
+ * 
+ * 【IDE编辑器运行】
+ * 1. isJoined=true后，显示IDE主界面
+ * 2. 用户在代码编辑器中输入代码 → handleCodeChange
+ * 3. handleCodeChange：更新状态 + 通过WebSocket发送给后端
+ * 4. 后端会广播给房间内的其他客户端（实时协作）
+ * 5. 点击运行按钮 → handleRunCode
+ * 6. handleRunCode：向后端发送代码 → 等待执行结果 → 终端显示输出
+ * 
+ * ================================================================
+ */
+
+/**
+ * T-10 后端开发接收并保存前端代码字符串的 API
+ * 前端：
+ * 1. 确定触发时机
+ * 2. 提取核心数据
+ *    2.1 核心容器：存放编辑器底层实例 使用 useRef 钩子来创建一个引用容器。  状态管理：控制 UI 交互和终端显示
+ *    2.2 捕获编辑器实例的回调函数 (传给 CodeEditor)  将实例装进 ref 容器
+ *    2.3 保存逻辑 handleSave(传给 Header)   editorRef.current.getValue() 提取纯文本
+ *    2.4 运行逻辑 handleRun(传给 Header)    editorRef.current.getValue() 提取纯文本
+ *    2.5 App -> Header, CodeEditor, Terminal
+ */
 
 function App() {
+  // 2.1 核心容器：存放编辑器底层实例 使用 useRef 钩子来创建一个引用容器。
+  const editorRef = useRef(null);
+
   const [activeFile, setActiveFile] = useState('index.js');
   // 新增：保存当前编辑器里的代码
   const [currentCode, setCurrentCode] = useState('');
   // 新增：防抖状态，标记是否正在请求后端
+  // 状态管理：控制 UI 交互和终端显示
+  const [isSaving, setIsSaving] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   // 新增：终端日志状态变更为可变状态
   const [terminalLogs, setTerminalLogs] = useState([
@@ -21,23 +69,108 @@ function App() {
   ]);
 
   // 9.4 控制页面是显示“登录大厅”还是“IDE 编辑器”
-  // 大步骤 2：开发前端大厅界面与状态管理
   const [isJoined, setJoined] = useState(false);
-  const [username, setUsername] = useState('');
-  const [roomId, setRoomId] = useState('');
-  const [currentSocket, setCurrentSocket] = useState(null);  // 存入状态，确保子组件能更新
+  // 用于WebSocket连接，确保子组件能更新
+  const [currentSocket, setCurrentSocket] = useState(null);
+  // 从URL中获取roomId（用于快速进入指定房间）
+  const [initialRoomId, setInitialRoomId] = useState('');
+
+  // 模拟roomId
+  const roomId = 'A2026';
+
+  // 2.2 捕获编辑器实例的回调函数 (传给 CodeEditor) 
+  const handleEditorDidMount = (editor, monaco) => {
+    editorRef.current = editor;  // 将实例装进 ref 容器
+    console.log("Monaco Editor 挂载成功，实例已捕获！");
+  }
+
+  // 2.3 保存逻辑 handleSave(传给 Header)   editorRef.current.getValue() 提取纯文本
+  const handleSave = async () => {
+    // console.log("🟢 按钮被点击了！当前状态检测:", {
+    //   hasEditor: !!editorRef.current,
+    //   isSaving: isSaving
+    // });
+
+
+    // 如果容器里有值就挂载 没有就返回
+    if (!editorRef.current || isSaving) return;
+    setIsSaving(true);
+    addLog('info', '正在保存代码');
+
+    try {
+      const currentCode = editorRef.current.getValue();  // 提取纯文本
+      // 也可以写成payload
+      // const payload = {
+      //   roomId: "project_1024",
+      //   code: currentCode,
+      //   language: 'javascript'
+      // };
+      // 用 fetch 方法像后端发送代码，请求执行
+      const response = await fetch('http://localhost:3000/api/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // body: JSON.stringify(payload)
+        body: JSON.stringify({
+          roomId: roomId,
+          code: currentCode,
+          language: 'javascript'
+        })
+      })
+    } catch (err) {
+      console.log(err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  /**
+ * 执行代码
+ * 流程：
+ * 1. 校验编辑器有内容
+ * 2. 设置运行状态为true（禁用按钮，防止重复点击）
+ * 3. 向后端发送代码和语言类型
+ * 4. 等待后端执行结果
+ * 5. 根据执行结果在终端中输出相应颜色的日志
+ * 6. 最后设置运行状态为false，恢复按钮
+ */
+
+  // 2.4 运行逻辑 handleRun(传给 Header)
+  const handleRun = async () => {
+    if (!editorRef.current || isRunning) return;
+    setIsRunning(true);
+    addLog('info', '正在运行代码');
+
+    try {
+      const currentCode = editorRef.current.getValue();  // 提前纯文本
+      // 用 fetch 方法像后端发送代码，请求执行
+      const response = await fetch('http://localhost:3000/api/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomId: roomId,
+          code: currentCode,
+          language: 'javascript'
+        })
+      })
+    } catch (err) {
+      console.log(err.message);
+    } finally {
+      setIsRunning(false);
+    }
+  }
 
   // 6.3 使用 useEffect 来监听 Socket 的消息  保证只在页面刚打开时打一次电话
   useEffect(() => {
     // 9.5 页面加载时，检查 URL 中是否有 roomId 参数
+    // 这样用户可以通过分享链接 (?roomId=123) 快速进入房间
     const urlParams = new URLSearchParams(window.location.search);
     const roomFromUrl = urlParams.get('roomId');
     if (roomFromUrl) {
-      setRoomId(roomFromUrl);
-      console.log(roomFromUrl);
+      setInitialRoomId(roomFromUrl);
+      console.log('从URL获取到roomId:', roomFromUrl);
     }
 
-    //监听前端自己是否连上了
+    // 监听前端自己是否连上了
     if (socket) {
       socket.on('connect', () => {
         console.log('我成功打通后端的电话了！');
@@ -50,30 +183,43 @@ function App() {
   }, [])  // 空依赖数组表示仅在组件挂载时执行一次
 
   // 9.6 加入房间的函数
-  const handleJoinRoom = async () => {
-    if (!username || !roomId) {
-      return alert('请输入昵称和房间号');
-    }
+  // 接收来自Login组件的用户名和房间号参数
+  const handleJoinRoom = async (usernameInput, roomIdInput) => {
+    // 注：Login组件已经验证过用户名和房间号不为空，这里无需再验证
 
     try {
-      // 1. 调用后端的HTTP接口 获取Token
+      // ========== 【第1步】调用后端HTTP接口获取JWT Token ==========
+      // 后端 /api/join 接口会：
+      // 1. 验证roomId是否存在
+      // 2. 生成JWT Token（包含用户信息）
+      // 3. 返回Token给前端
       const res = await fetch('http://localhost:3000/api/join', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, roomId })
+        body: JSON.stringify({ username: usernameInput, roomId: roomIdInput })
       });
       const data = await res.json()
 
       if (data.success) {
-        // 2. 把拿到手的Token存进浏览器的 `localStorage` 里。
-        const local = localStorage.setItem('ide_token', data.token);
-        // console.log(local);
-        // 3. 修改浏览器地址栏 带上roomId
-        window.history.pushState({}, '', `?roomId=${roomId}`);
-        // 4. 调用connectSocket,建立 WebSocket 长连接 连接并保存到State里
-        const s = connectSocket(roomId, data.token);
+        // ========== 【第2步】保存Token到localStorage ==========
+        // Token会用于建立WebSocket长连接时进行身份验证
+        localStorage.setItem('ide_token', data.token);
+
+        // ========== 【第3步】更新浏览器URL，记录roomId ==========
+        // 用户刷新页面时能自动恢复到该房间
+        window.history.pushState({}, '', `?roomId=${roomIdInput}`);
+
+        // ========== 【第4步】建立WebSocket长连接 ==========
+        // connectSocket会：
+        // 1. 创建socket连接到后端
+        // 2. 携带roomId和Token进行身份验证
+        // 3. 返回连接实例保存到状态
+        const s = connectSocket(roomIdInput, data.token);
         setCurrentSocket(s);
-        // 5. 切换界面状态，显示真正的编辑器
+
+        // ========== 【第5步】切换界面状态 ==========
+        // isJoined变为true，触发App组件重新渲染
+        // 页面从Login组件切换到真正的IDE编辑器界面
         setJoined(true);
       } else {
         alert(data.message);
@@ -84,111 +230,79 @@ function App() {
   }
 
   // T-07 前端监听编辑器内容并向服务器发送变更
-  // 7.1 编辑器内容变化时，触发 handleRunCode 函数，向后端发送当前代码。
+  /**
+   * 处理编辑器内容变化
+   * 流程：
+   * 1. 更新本地 currentCode 状态（保持UI和状态同步）
+   * 2. 通过 WebSocket 向后端发送代码变更
+   * 3. 后端会广播给房间内其他所有客户端，实现实时协作
+   */
   const handleCodeChange = (newCode) => {
-    // console.log("📸 [总部确认]：收到车间代码，准备拨号发给后端！");
-    // 1. 同步更新 currentCode 状态，保持编辑器内容和状态一致。
+    // 同步更新状态
     setCurrentCode(newCode);
-    // 2. 发送给后端
-    if (socket) {
-      socket.emit('codeChange', newCode);
+    // 如果WebSocket已连接，发送代码变更给后端
+    if (currentSocket) {
+      currentSocket.emit('codeChange', newCode);
     }
   }
 
-  // 核心函数：触发代码运行
-  const handleRunCode = async () => {
-    if (!currentCode.trim()) return;
-
-    setIsRunning(true);
-    // 在终端打印开始执行的提示
-    addLog('info', `> 正在执行 ${activeFile} ...`);
-
-    try {
-      // 向我们刚才写好的本地 Node.js 服务器发送代码
-      const response = await fetch('http://localhost:3000/api/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: currentCode,
-          language: 'javascript'
-        })
-      });
-
-      const result = await response.json();
-
-      // 根据后端返回的 success 字段决定输出颜色
-      if (result.success) {
-        addLog('success', result.output || '(无输出结果)');
-      } else {
-        addLog('error', result.output);
-      }
-    } catch (err) {
-      addLog('error', '❌ 连接后端服务器失败，请检查 Server 是否已启动 (端口3000)。');
-    } finally {
-      setIsRunning(false);
-    }
-  };
-
-
-
   // 辅助函数：往终端追加日志
+  /**
+   * 向终端中添加新的日志消息
+   * @param {string} type - 日志类型：'info'(蓝色)、'success'(绿色)、'error'(红色)
+   * @param {string} text - 日志内容
+   */
   const addLog = (type, text) => {
     setTerminalLogs(prev => [...prev, { id: Date.now(), type, text }]);
   };
 
-  // 渲染判断：如果没有加入房间，显示【检票大厅】
+  // ========== 【主要渲染逻辑】==========
+  // 根据 isJoined 状态决定显示什么界面
+
+  // 如果 isJoined = false，显示Login组件（登录/进入房间）
   if (!isJoined) {
-    return (
-      // 改为明亮背景：bg-slate-50
-      <div className="flex flex-col items-center justify-center h-screen bg-slate-50 text-slate-800">
-        <div className="bg-white p-8 rounded-xl shadow-lg border border-slate-200 w-96">
-          <h1 className="text-2xl font-bold mb-6 text-center text-blue-600">Web IDE 协作空间</h1>
-          <div className="flex flex-col gap-4">
-            <input
-              type="text"
-              placeholder="你的昵称"
-              className="p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-400 outline-none transition-all"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="房间号"
-              className="p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-400 outline-none transition-all"
-              value={roomId}
-              onChange={(e) => setRoomId(e.target.value)}
-            />
-            <button
-              onClick={handleJoinRoom}
-              className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg font-bold shadow-md transition-colors"
-            >
-              进入房间
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+    return <Login onJoinRoom={handleJoinRoom} initialRoomId={initialRoomId} />;
   };
 
-  // 如果 isJoined 为 true，显示【真正的编辑器页面】
+  // 如果 isJoined = true，显示IDE编辑器界面
+  // 整体布局：侧边栏 + 编辑器区域（上：代码编辑器 + 下：终端）
   return (
-    // 最外层容器：撑满全屏 (h-screen w-screen)，采用 Flex 横向布局
+    // 最外层容器：撑满全屏，暗色背景
     <div className="h-screen w-screen flex bg-gray-900 text-white font-sans">
-      {/* 把状态和修改状态的方法，当做参数 (Props) 传给侧边栏 */}
+      {/* 左侧：侧边栏（文件导航） */}
       <Sidebar activeFile={activeFile} setActiveFile={setActiveFile} />
 
-      {/* {flex-1：确保编辑器能填满右侧剩余的所有空间，不留白边。} */}
+      {/* 右侧：编辑器区域（flex-1占满剩余空间） */}
       <div className="flex-1 flex flex-col">
 
-        {/* 将方法作为 Props 传递 */}
-        <Header activeFile={activeFile} onRunCode={handleRunCode} isRunning={isRunning} />
+        {/* 顶部：Header（显示文件名、运行按钮） */}
+        <Header
+          activeFile={activeFile}
+          isSaving={isSaving}
+          isRunning={isRunning}
+          onSave={handleSave}
+          onRun={handleRun}
+        />
 
-        {/* 编辑器需要 onChange 事件将用户输入同步给 currentCode 状态 */}
-        {/* 7.2 把 handleCodeChange 包装成 setCode 传给子组件 */}
-        {/* 将 socket 作为 prop 传给编辑器，彻底解决空白/不更新问题 */}
-        <CodeEditor code={currentCode} setCode={handleCodeChange} roomId={roomId} socket={currentSocket} />
+        {/* 中间：代码编辑器（Monaco编辑器） */}
+        {/* 
+          Props说明：
+          - code: 当前代码内容
+          - setCode: 代码变更回调（会同步状态并广播给其他客户端）
+          - roomId: 房间ID
+          - socket: WebSocket实例（用于接收其他用户的代码变更）
+        */}
 
-        {/* 终端接收最新的日志数组进行渲染 */}
+        {/* 传入挂载拦截器 handleEditorDidMount */}
+        <CodeEditor
+          code={currentCode}
+          setCode={handleCodeChange}
+          roomId={initialRoomId}
+          socket={currentSocket}
+          onMount={handleEditorDidMount}
+        />
+
+        {/* 下方：终端（显示运行结果和日志） */}
         <Terminal logs={terminalLogs} />
       </div>
     </div>
