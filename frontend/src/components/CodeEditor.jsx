@@ -1,36 +1,21 @@
 import Editor from '@monaco-editor/react';
 // T-08 T-08服务器广播代码，实现多端同步
-// 8.1 定义一个全局标志位，默认为false(代表是手动输入)
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { debounce } from 'lodash';
-import { socket } from '../socket'; // 引入我们刚刚建立的 Socket 连接实例
+import { useEffect, useRef } from 'react';
 // 中间战区
 // 职责： 封装 Monaco Editor，处理代码输入。
 // 内部逻辑： 它未来需要把写好的代码发送给后端。
 
 
 // 接收父组件 (App.jsx) 传过来的 socket 实例
-export default function CodeEditor({ socket, onMount }) {
-  // 本地存储代码的状态
-  const [code, setCode] = useState('// 请在此输入代码...');
+export default function CodeEditor({ socket, onMount, code, setCode }) {
+  // 使用父组件传入的代码状态（而非本地状态）
 
 
   // 8.2 拦截：用于区分本地手动输入 还是 远程Socket 推送的代码更新
   // 默认为 false, 代表本地输入
   const isRemoteUpdate = useRef(false);
 
-  // 8.3 定义防抖发送函数(延迟400ms发送)
-  // 使用 useCallback 包裹，确保组件在重新渲染时，防抖函数不会被重置而失效。
-  const emitCodeChange = useCallback(
-    debounce((newCode) => {
-      if (socket) {
-        socket.emit('codeChange', newCode);
-      }
-    }, 500),  // 500毫秒防抖
-    [socket]
-  )
-
-  // 8.4 监听服务器广播的代码变更(接收端)
+  // 8.3 监听服务器广播的代码变更(接收端)
   useEffect(() => {
     if (!socket) return;  // 如果还没有连接成功，先不监听
 
@@ -48,7 +33,7 @@ export default function CodeEditor({ socket, onMount }) {
     return () => {
       socket.off('codeChange', handleReceiveChange);
     }
-  }, [socket])  // 依赖 socket 变化
+  }, [socket, setCode])  // 依赖 socket 和 setCode 变化
 
   // 处理本地编辑器的onChange事件(发送端)
   const handleEditorChange = (value) => {
@@ -61,10 +46,11 @@ export default function CodeEditor({ socket, onMount }) {
       return; // 直接返回，不发送消息
     }
 
-    // 如果锁是打开的（false），说明这是用户的手动输入，我们正常处理，发送给服务器。
-    setCode(value); //  实时更新本地 React状态，保证打字的流畅性和编辑器内容一致。
-    emitCodeChange(value); // 调用防抖函数，400ms 后发送给服务器。如果在这400ms内用户继续输入，之前的发送会被取消，直到用户停下来超过400ms才真正发送一次。这样可以大幅减少网络请求次数，提高性能。
+    // 如果锁是打开的（false），说明这是用户的手动输入，我们正常处理，调用父组件的 setCode。
+    // 发送给后端由父组件 App.jsx 的 handleCodeChange 统一处理
+    setCode(value); //  实时更新父组件的代码状态，并通过 handleCodeChange 发送给后端
   }
+
   return (
     <div className="flex-1">
       <Editor
@@ -75,7 +61,6 @@ export default function CodeEditor({ socket, onMount }) {
         // 第三步实现：Monaco Editor 一旦发现内容变了，立刻执行 setCode
         // 这里的 value 就是用户刚打进去的最新的那一串代码
         onChange={handleEditorChange} // 监听编辑器内容变化事件，触发 handleEditorChange 函数
-        onClick={() => setEditorMode(EditorMode.Editor)}
         onMount={onMount}  /* 关键：将内部的 onMount 暴露给父组件 App.jsx */
         options={{
           fontSize: 16,

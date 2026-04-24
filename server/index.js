@@ -1,8 +1,8 @@
 const express = require('express');
 const cors = require('cors');
-const fs = require('fs');
+const fs = require('fs');  // 文件系统，用于读写临时文件
 const { exec } = require('child_process');
-const path = require('path');
+const path = require('path');  // 路径处理，用于拼接绝对路径
 const http = require('http'); // Node.js 自带的模块，不用 npm install
 // 6. 后端引入 socket.io 建立长连接服务
 // 6.1 导入socket.io
@@ -10,7 +10,16 @@ const { Server } = require('socket.io');
 // T-09 引入 JWT 与 Room 机制，实现房间隔离
 // 9.1 引入 JWT 库
 const jwt = require('jsonwebtoken');
-
+// 子进程，用于拼接绝对路径
+const { spawn } = require('child_process');
+/**
+ * T-11 Node child_process 运行代码
+ *  1. 写入文件 fs.promises.writeFile
+ *  2. 安全边界与沙箱隔离 (Sandbox) 挂载 Docker 容器或配置 isolated-vm
+ *  3. 创建子进程 child_process.spawn
+ *  4. 监听输出流 child_stdout.on('data', )
+ *  5. 清理fs.promises.unlink 监听close事件
+ */
 
 const app = express();
 // 开启跨域允许前端 (5173端口) 访问
@@ -101,6 +110,65 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('codeChange', newCode);
   })
 
+  // T-11 监听前端发送的事件名叫 executeCode
+  socket.on('executeCode', async (code) => {
+    // 【步骤 1: 准备文件路径】
+    // 提示: 用模板字符串和 Date.now() 拼一个唯一的文件名，比如 `temp_${Date.now()}.js`
+    // API: path.join(__dirname, 'temp', 你的文件名) -> 存给一个叫 filePath 的变量
+    const tempDir = path.join(__dirname, 'temp');
+    // 注意: 你需要在 server 目录下手动建一个名叫 temp 的空文件夹
+    const filePath = path.join(tempDir, `temp_${Date.now()}.js`);
+
+    try {
+      // 【步骤 2: 代码落盘 (存为物理文件)】
+      // 提示: 把前端传来的 code 写入到 filePath。因为是异步，记得加 await！
+      // API: fs.promises.writeFile(路径, 内容)
+      await fs.promises.writeFile(filePath, code, 'utf8');
+      console.log(`${filePath}`);
+
+      // 【步骤 3: 召唤子进程 (执行代码)】
+      // 提示: 用 node 命令去执行刚才生成的那个文件。
+      // API: spawn('node', [要执行的文件路径], { 配置对象 })
+      // 🔥 安全要点: 配置对象里一定要加上 timeout: 5000 (限制最多跑5秒，防止死循环)
+      const child = spawn('node', [filePath], { timeout: 5000 });
+
+      // 【步骤 4: 收集正常输出 (stdout)】
+      // 提示: 监听子进程的 'data' 事件。
+      // API: child.stdout.on('data', (data) => { ... })
+      // ⚠️ 避坑指南: data 默认是 Buffer(二进制数据)，发给前端前必须 data.toString()！
+      // 发送 API: socket.emit('terminalOutput', 处理后的字符串);
+      child.stdout.on('data', (data) => {
+        console.log(`${data}`);
+        socket.emit('terminalOutput', data.toString());
+      })
+
+      // 【步骤 5: 收集错误输出 (stderr)】
+      // 提示: 和步骤 4 一模一样，只是监听的对象换成了 child.stderr
+      // 发送 API: socket.emit('terminalError', 处理后的字符串);
+      child.stderr.on('data', (data) => {
+        console.log(`${data}`);
+        socket.emit('terminalError', data.toString());
+      })
+
+      // 【步骤 6: 进程结束与清理战场】
+      // 提示: 监听子进程的 'close' 事件。
+      // API: child.on('close', async (exitCode) => { ... })
+      // 动作 A: 告诉前端执行结束了 -> socket.emit('executionFinished', exitCode);
+      // 动作 B (极度重要): 删除刚才生成的临时文件！ -> await fs.promises.unlink(filePath);
+      child.on('close', async (exitCode) => {
+        console.log(`子进程退出，退出码 ${exitCode}`);
+        socket.emit('executionFinished', exitCode);
+        // 清理战场：删除临时文件
+        if (fs.existsSync(filePath)) {
+          await fs.promises.unlink(filePath);
+        }
+      })
+
+    } catch (err) {
+      // 兜底：如果写入文件失败，通知前端
+      socket.emit('terminalError', `服务器内部错误: ${err.message}`);
+    }
+  });
 
   // 6.4.1 监听挂断事件
   socket.on('disconnect', () => {
@@ -115,7 +183,7 @@ app.post('/api/save', (req, res) => {
   const { roomId, code, language } = req.body;
   // 2. 简单安全的校验
   if (!code) {
-    return res.status(400).join({ error: '代码不能为空' });
+    return res.status(400).json({ error: '代码不能为空' });
   }
 
   // 3. 生成一个 `.js` 临时文件并写入
@@ -152,7 +220,7 @@ app.post('/api/run', (req, res) => {
 
   // 2. 简单安全的校验
   if (!code) {
-    return res.status(400).join({ error: '代码不能为空' });
+    return res.status(400).json({ error: '代码不能为空' });
   }
 
   // // 目前仅支持 JavaScript 的执行演示

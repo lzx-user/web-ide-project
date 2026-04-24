@@ -6,7 +6,8 @@ import Terminal from './components/Terminal';
 import Login from './components/Login';
 // T-06 后端的地址（比如 `http://localhost:3000`）发起连接请求。
 // 6.1 引入刚刚装的拨号盘
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { debounce } from 'lodash';
 import { socket, connectSocket } from './socket';
 import { Editor } from '@monaco-editor/react';
 
@@ -52,6 +53,14 @@ import { Editor } from '@monaco-editor/react';
  *    2.5 App -> Header, CodeEditor, Terminal
  */
 
+/**
+ * T-11 Node child_process 运行代码
+ * 1. 定义核心状态 terminalLogs isRunning
+ * 2. 发射指令与 UI 反馈 (点击运行时)
+ * 3. 接收回音 (Socket 监听通道) terminalOutput terminalError executionFinished
+ * 4. 终端动态渲染 (Terminal.jsx)
+ * 
+ */
 function App() {
   // 2.1 核心容器：存放编辑器底层实例 使用 useRef 钩子来创建一个引用容器。
   const editorRef = useRef(null);
@@ -138,6 +147,9 @@ function App() {
   const handleRun = async () => {
     if (!editorRef.current || isRunning) return;
     setIsRunning(true);
+    // 11.2 通过 Socket 发射代码字符串给后端
+    socket.emit('executeCode', currentCode);
+
     addLog('info', '正在运行代码');
 
     try {
@@ -161,6 +173,9 @@ function App() {
 
   // 6.3 使用 useEffect 来监听 Socket 的消息  保证只在页面刚打开时打一次电话
   useEffect(() => {
+    // 🚪 修复核心一：安全门防崩。如果 socket 是 null，直接中断执行
+    if (!socket) return;  // 如果还没有连接成功，先不监听
+
     // 9.5 页面加载时，检查 URL 中是否有 roomId 参数
     // 这样用户可以通过分享链接 (?roomId=123) 快速进入房间
     const urlParams = new URLSearchParams(window.location.search);
@@ -170,6 +185,45 @@ function App() {
       console.log('从URL获取到roomId:', roomFromUrl);
     }
 
+    // 11.3: 接收回音 (Socket 监听通道) 
+    // 监听正常输出 (stdout)
+    const handleOutput = (data) => {
+      setTerminalLogs(prev => [...prev, {
+        id: Date.now(),
+        type: 'info',
+        text: data
+      }]);
+    }
+
+    // 监听报错输出 (stderr)
+    const handleError = (data) => {
+      setTerminalLogs(prev => [...prev, {
+        id: Date.now(),
+        type: 'error',
+        text: data
+      }]);
+    }
+
+    // 监听进程结束
+    const handleFinish = (exitCode) => {
+      setTerminalLogs(prev => [...prev, {
+        id: Date.now(),
+        type: 'system',
+        text: `\n[进程执行完毕，退出码: ${exitCode}]`
+      }]);
+    }
+
+    socket.on('terminalOutput', handleOutput);
+    socket.on('terminalError', handleError);
+    socket.on('executionFinished', handleFinish);
+
+    // 清理监听器，防止内存泄漏和重复监听
+    return () => {
+      socket.off('terminalOutput', handleOutput);
+      socket.off('terminalError', handleError);
+      socket.off('executionFinished', handleFinish);
+    }
+
     // 监听前端自己是否连上了
     if (socket) {
       socket.on('connect', () => {
@@ -177,10 +231,10 @@ function App() {
       })
     }
     // 当组件卸载(比如关闭页面)时，主动挂断电话
-    return () => {
-      // socket.disconnect();
-    }
-  }, [])  // 空依赖数组表示仅在组件挂载时执行一次
+    // return () => {
+    //   // socket.disconnect();
+    // }
+  }, [socket])  // 注意依赖项是 socket，确保在 socket 连接成功后才设置监听器  // 空依赖数组表示仅在组件挂载时执行一次
 
   // 9.6 加入房间的函数
   // 接收来自Login组件的用户名和房间号参数
@@ -234,16 +288,26 @@ function App() {
    * 处理编辑器内容变化
    * 流程：
    * 1. 更新本地 currentCode 状态（保持UI和状态同步）
-   * 2. 通过 WebSocket 向后端发送代码变更
+   * 2. 通过 WebSocket 向后端发送代码变更（防抖500ms）
    * 3. 后端会广播给房间内其他所有客户端，实现实时协作
    */
+  
+  // 防抖发送函数（500ms延迟）
+  const debouncedEmitCode = useCallback(
+    debounce((code) => {
+      if (currentSocket) {
+        currentSocket.emit('codeChange', code);
+        console.log('防抖发送代码给后端:', code);
+      }
+    }, 500),
+    [currentSocket]
+  );
+
   const handleCodeChange = (newCode) => {
     // 同步更新状态
     setCurrentCode(newCode);
-    // 如果WebSocket已连接，发送代码变更给后端
-    if (currentSocket) {
-      currentSocket.emit('codeChange', newCode);
-    }
+    // 防抖发送给后端
+    debouncedEmitCode(newCode);
   }
 
   // 辅助函数：往终端追加日志

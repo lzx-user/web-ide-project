@@ -1,3 +1,2 @@
-// 请在此输入代码...
-// day
-console.log(111)
+console.log("Hello, Web IDE!");
+console.log("计算结果:", 100 + 200);

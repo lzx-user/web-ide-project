@@ -202,7 +202,7 @@ app.post('/api/run', (req, res) => {
 
   // 2. 简单安全的校验
   if (!code) {
-    return res.status(400).join({ error: '代码不能为空' });
+    return res.status(400).json({ error: '代码不能为空' });
   }
 
   // // 目前仅支持 JavaScript 的执行演示
