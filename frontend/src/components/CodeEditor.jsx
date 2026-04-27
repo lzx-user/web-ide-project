@@ -1,72 +1,79 @@
+import React, { useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
-// T-08 T-08服务器广播代码，实现多端同步
-import { useEffect, useRef } from 'react';
-// 中间战区
-// 职责： 封装 Monaco Editor，处理代码输入。
-// 内部逻辑： 它未来需要把写好的代码发送给后端。
 
+// Refs 状态控制 -> 远程副作用监听 -> 本地交互处理 -> UI 渲染配置。
+/**
+ * CodeEditor 组件
+ * 职责：封装 Monaco Editor，实现代码实时编辑与多人协作同步。
+ * * 核心设计思路：
+ * 1. 状态同步：使用父组件 App 传入的 code 和 setCode，确保“单向数据流”，防止编辑器状态不一致。
+ * 2. 冲突拦截：利用 useRef 实现一个“同步锁”，区分代码变更是来自“本地手动输入”还是“远程协作推送”。
+ */
 
-// 接收父组件 (App.jsx) 传过来的 socket 实例
 export default function CodeEditor({ socket, onMount, code, setCode }) {
-  // 使用父组件传入的代码状态（而非本地状态）
-
-
-  // 8.2 拦截：用于区分本地手动输入 还是 远程Socket 推送的代码更新
-  // 默认为 false, 代表本地输入
+  // 1. 核心变量控制(Refs)
+  // 拦截锁: 默认为 false(代表本地输入)
+  // 作用：当接收到远程代码更新时设为 true，防止本次更新再次被触发 onChange 发回服务器，从而导致无限死循环。
   const isRemoteUpdate = useRef(false);
 
-  // 8.3 监听服务器广播的代码变更(接收端)
+  // 2. 远程同步监听 (Side Effects)
   useEffect(() => {
-    if (!socket) return;  // 如果还没有连接成功，先不监听
+    // 防御性编程：如果 WebSocket 连接尚未建立，则不进行监听
+    if (!socket) return;
 
+    /**
+     * 处理从服务器广播而来的其他用户代码变更
+     */
     const handleReceiveChange = (newCode) => {
-      // 代码更新来自于其他人推送
-      isRemoteUpdate.current = true; // 标记这是一个远程更新
-      // 更新本地编辑器显示的内容 触发下方 Monaco 的 onChange 事件
+      // 第一步：开启拦截锁，标记接下来的变化属于远程推送
+      isRemoteUpdate.current = true;
+      // 第二步：通过父组件方法更新代码，这会触发下方 Editor 的 value 变化及相应的 onChange
       setCode(newCode);
     }
 
-    // 监听服务器广播的 'codeChange' 消息
+    // 绑定 Socket 监听事件
     socket.on('codeChange', handleReceiveChange);
 
-    // 清理函数：组件卸载时取消监听，避免内存泄漏和重复监听
+    // 清理函数：组件卸载或 Socket 变化时移除监听，防止内存泄漏和重复绑定
     return () => {
       socket.off('codeChange', handleReceiveChange);
     }
   }, [socket, setCode])  // 依赖 socket 和 setCode 变化
 
-  // 处理本地编辑器的onChange事件(发送端)
+  // --- 3. 本地交互处理 (Handlers) ---
+  /**
+   * 编辑器内容变化回调
+   * @param {string} value - 编辑器当前最新的纯文本代码
+   */
   const handleEditorChange = (value) => {
-    // 检查锁状态
+    // 逻辑检查：如果当前处于“远程更新模式”，则消费掉锁并拦截，不再向服务器发送
     if (isRemoteUpdate.current) {
-      // 如果锁是闭合的（true），说明这个 onChange 是刚才上面 setCode(newCode) 被动触发的。
-      // 我们直接拦截，不再向服务器发回数据（打破死循环）。
-      // 拦截完毕后，把锁打开，准备迎接下一次用户的真实手动输入。
-      isRemoteUpdate.current = false; // 打开锁，准备迎接下一次用户输入
-      return; // 直接返回，不发送消息
+      isRemoteUpdate.current = false; // 锁重置，准备迎接下一次用户真实操作
+      return;
     }
-
-    // 如果锁是打开的（false），说明这是用户的手动输入，我们正常处理，调用父组件的 setCode。
-    // 发送给后端由父组件 App.jsx 的 handleCodeChange 统一处理
-    setCode(value); //  实时更新父组件的代码状态，并通过 handleCodeChange 发送给后端
   }
 
+  // 如果是用户真实的手动输入，则调用父组件方法。
+  // 该方法在 App.jsx 中配合 lodash 的防抖逻辑，将代码变更广播给房间内其他人。
+  setCode(value);
+
+  // 4. UI 渲染
   return (
     <div className="flex-1">
       <Editor
         height="100%"
-        language="javascript"  // 开启 JS 语法高亮，让代码变彩色。
-        theme="vs-dark"
+        language="javascript"  // 开启 JS 语法色彩增强
+        theme="vs-dark"  // 采用深色 IDE 主题
         value={code}
-        // 第三步实现：Monaco Editor 一旦发现内容变了，立刻执行 setCode
-        // 这里的 value 就是用户刚打进去的最新的那一串代码
         onChange={handleEditorChange} // 监听编辑器内容变化事件，触发 handleEditorChange 函数
-        onMount={onMount}  /* 关键：将内部的 onMount 暴露给父组件 App.jsx */
+        onMount={onMount}  // 将底层编辑器实例暴露给父组件（用于 getValue 等操作）
         options={{
           fontSize: 16,
-          minimap: { enabled: false },   // 关掉右侧小地图，小屏幕下节省空间。
-          wordWrap: 'on',   // 自动折行，代码太长时不用拉横向滚动条。
-          padding: { top: 16 }
+          minimap: { enabled: false }, // 禁用右侧缩略地图以节省空间
+          wordWrap: 'on',             // 自动折行，避免出现横向滚动条
+          padding: { top: 16 },
+          automaticLayout: true,      // 自动监听容器大小变化，解决 IDE 布局切换时的拉伸问题
+          scrollBeyondLastLine: false, // 滚过最后一行不再留白
         }}
       />
     </div>

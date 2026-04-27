@@ -1,50 +1,26 @@
 import React, { useState } from 'react';
 
 /**
- * ================================================================
- * 【Login 组件 - 登录/进入房间】
- * ================================================================
- * 
- * 职责：显示登录界面，收集用户的昵称和房间号
- * 
- * 执行流程：
- * 1. 从App.jsx接收两个Props：
- *    - onJoinRoom: 加入房间的回调函数，接收(username, roomId)
- *    - initialRoomId: URL参数中获取的房间号（用于快速进入）
- * 
- * 2. 用户输入：
- *    - 输入框1：昵称（username）
- *    - 输入框2：房间号（预填充URL参数的值，可修改）
- * 
- * 3. 点击进入按钮：
- *    - 校验用户名和房间号不为空
- *    - 调用 onJoinRoom(username, roomId) 回调
- *    - 真正的加入逻辑在App.jsx的handleJoinRoom中处理
- * 
- * 组件状态：
- * - username: 用户昵称（初始为空）
- * - roomId: 房间号（初始为URL参数值或空）
- * 
- * ================================================================
+ * Login 组件 (登录与协作大厅)
+ * 职责：负责收集用户的身份信息与目标房间号，将表单数据向上传递。
+ * * @param {Object} props
+ * @param {Function} props.onJoinRoom - 点击进入房间的回调，签名: (username, roomId) => void
+ * @param {string} props.initialRoomId - 从 URL 中解析出的初始房间号，用于分享链接的自动填充
  */
+
 function Login({ onJoinRoom, initialRoomId }) {
-  // 本地状态：用户昵称
   const [username, setUsername] = useState('');
-  // 本地状态：房间号（如果URL中有roomId，则使用该值预填充）
   const [roomId, setRoomId] = useState(initialRoomId || '');
 
   /**
-   * 处理进入房间的逻辑
-   * 流程：
-   * 1. 检查用户名和房间号是否为空
-   * 2. 调用父组件的onJoinRoom回调，将数据传给App.jsx
-   * 3. App.jsx会处理真正的登录逻辑（调用后端API、建立WebSocket等）
+   * 提交表单逻辑
+   * 拦截空输入，非空时触发外层 App 组件的回调，处理后续的 JWT 获取和 Socket 连接。
    */
-  const handleJoin = async () => {
+  const handleJoin = () => {
     if (!username || !roomId) {
-      return alert('请输入昵称和房间号');
+      alert('请输入昵称和房间号');
+      return;
     }
-    // 将用户输入传给父组件处理
     onJoinRoom(username, roomId);
   }
 
