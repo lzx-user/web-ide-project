@@ -7,6 +7,9 @@ const http = require('http');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const { spawn } = require('child_process');
+const roomRouter = require('./routes/room');
+const codeRouter = require('./routes/code');
+
 // 1. 引入统一配置文件
 const config = require('./config');
 
@@ -25,6 +28,10 @@ app.use(cors());
 // 解析 application/json 格式的请求体 (JSON 解析中间件)
 app.use(express.json());
 
+// 3. 路由注册：把房间管理和代码管理的路由注册到 Express 应用上
+app.use('/', roomRouter);
+app.use('/', codeRouter);
+
 // 用原生的http模块包装express应用
 const server = http.createServer(app);
 // 把socket.io服务器绑定到这个http服务器上
@@ -38,66 +45,6 @@ if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir);
 }
 
-// 3. HTTP 业务接口
-
-/**
- * 接口：用户加入房间
- * 签发 Token，后续 Socket 连接必须携带此 Token。
- */
-app.post('/api/join', (req, res) => {
-  const { username, roomId } = req.body;
-  if (!username || !roomId) {
-    return res.status(400).json({
-      success: false,
-      message: '用户名和房间号不能为空'
-    });
-  }
-  // 把用户名和房间号打包成一个对象，作为 JWT 的载荷 (Payload)
-  const payload = {
-    username,
-    roomId,
-  }
-  // 引用配置中的密钥与过期时间 签发一个 Token
-  const token = jwt.sign(payload, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
-
-  // 把生成的 Token 和成功状态，通过 res.json() 返回给前端
-  res.json({
-    success: true,
-    token,
-    payload
-  })
-});
-
-/**
- * 接口：代码持久化保存
- */
-app.post('/api/save', (req, res) => {
-  const { roomId, code } = req.body;
-  if (!code) return res.status(400).json({ error: '内容不能为空' });
-
-  const filePath = path.join(tempDir, `${roomId}.js`);
-  try {
-    fs.writeFileSync(filePath, code, 'utf8');
-    res.status(200).json({ success: true, message: '保存成功' });
-  } catch (error) {
-    res.status(500).json({ error: '文件系统写入失败' });
-  }
-});
-
-/**
- * 接口：代码执行 (HTTP 短连接模式)
- */
-app.post('/api/run', (req, res) => {
-  const { code } = req.body;
-  const tempFilePath = path.join(tempDir, `run_${Date.now()}.js`);
-  fs.writeFileSync(tempFilePath, code);
-
-  exec(`node ${tempFilePath}`, (error, stdout, stderr) => {
-    if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-    res.json({ success: !error, output: stderr || stdout || error?.message });
-  });
-});
-
 // 4. Socket.io 安全与业务逻辑
 
 // Socket 拦截器：验证 JWT 凭证
@@ -108,8 +55,8 @@ io.use((socket, next) => {
     return next(new Error("拒绝访问：未提供Token"));
   }
 
-  // 验证 Token 的合法性
-  jwt.verify(token, SECRET_KEY, (err, decoded) => {
+  // 验证 Token 的合法性，使用配置文件中的 JWT 密钥
+  jwt.verify(token, config.jwt.secret, (err, decoded) => {
     if (err) {
       return next(new Error("拒绝访问：Token无效或已过期"));
     }
@@ -125,6 +72,42 @@ io.on('connection', (socket) => {
   const { roomId, username } = socket.user;
   socket.join(roomId);  // 自动加入 JWT 中指定的房间
   console.log(`[房间 ${roomId}] 用户 ${username} 已连接`);
+
+  // 新用户历史代码同步机制
+  // 思路：当新用户加入房间时，服务器从临时目录读取该房间的最新代码（如果有），并通过 socket.emit 发送给这个新用户。
+  // 1. 准备一个空包裹，等会儿用来装我们找到的代码
+  // 最终长这样：{ 'index.js': 'console.log(1)', 'style.css': 'body{}' }
+  const codePackage = {};
+  try {
+    // 同步读取(Sync)
+    // 2. 读取临时目录下所有文件，找到属于这个房间的最新代码
+    const allFiles = fs.readdirSync(tempDir);
+    // 3. 遍历这个数组，挨个检查文件
+    allFiles.forEach(fileName => {
+      // 字符串过滤：通过 startsWith 和 replace 这两个原生的字符串方法
+      // 4. 判断条件：这个文件是属于当前房间的吗？ 利用startsWith方法，房间ID是文件名前缀
+      if (fileName.startsWith(`${roomId}_`)) {
+        // 5. 如果是，就读取这个文件的内容，放到 codePackage 里
+        const filePath = path.join(tempDir, fileName);
+        // 6. 用fs.readFileSync同步读取文件内容
+        const codeContent = fs.readFileSync(filePath, 'utf8');
+        // 7. 从文件名中提取出原始文件名（去掉 roomId_ 前缀）把前缀替换成空字符串即可
+        const realFileName = fileName.replace(`${roomId}_`, '');
+        // 8. 把装好的代码的文件，放进我们的包裹里
+        codePackage[realFileName] = codeContent;
+      }
+    });
+    // 9. 查看包裹里有没有东西(判断对象是否为空)
+    if (Object.keys(codePackage).length > 0) {
+      // 10. 如果有，就通过 socket.emit 发送给这个新用户，事件名叫 'initCodePackage' 
+      // 精准投递：socket.emit 代表只给触发这个动作的本人发消息。
+      socket.emit('initCodePackage', codePackage);
+      // 打印日志，确认同步成功
+      console.log(`[房间 ${roomId}] 已同步历史代码给用户 ${username} 发送了 ${Object.keys(codePackage).length} 个历史文件`);
+    }
+  } catch (err) {
+    console.error('读取代码文件失败:', err);
+  }
 
   // 监听：代码变更同步 (排除发送者)
   socket.on('codeChange', (newCode) => {

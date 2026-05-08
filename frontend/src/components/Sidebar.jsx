@@ -14,7 +14,7 @@ const FILE_LIST = [
 /**
  * Sidebar 组件 (侧边资源管理器)
  * 职责：展示项目文件树结构，并允许用户切换当前正在编辑的文件。
- * * @param {Object} props
+ * @param {Object} props
  * @param {string} props.activeFile - 当前被激活（选中）的文件名，用于 UI 高亮控制。
  * @param {Function} props.setActiveFile - 状态变更回调，用于通知父组件 App 切换当前编辑的文件。
  */
