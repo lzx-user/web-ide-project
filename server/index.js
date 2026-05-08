@@ -111,16 +111,22 @@ io.on('connection', (socket) => {
 
   // 监听：代码变更同步 (排除发送者)
   socket.on('codeChange', (newCode) => {
-    socket.to(roomId).emit('codeChange', newCode);
+    io.to(roomId).emit('codeChange', newCode);
   })
 
   // 监听：流式执行代码
-  socket.on('executeCode', async (code) => {
+  socket.on('executeCode', async (payload) => {
+    // 兼容处理：从前端传来的对象中解构出代码字符串
+    const codeStr = typeof payload === 'object' ? payload.code : payload;
+
     // 生成一个独一无二的临时文件路径
     const filePath = path.join(tempDir, `stream_${Date.now()}.js`);
 
     try {
-      await fs.promises.writeFile(filePath, code, 'utf8');
+      // 在准备写入文件和执行前，先广播给所有人：有人触发了运行！
+      io.to(roomId).emit('executionStarted');
+
+      await fs.promises.writeFile(filePath, codeStr, 'utf8');
 
       // API: spawn('node', [要执行的文件路径], { 配置对象 })
       // 安全要点: 配置对象里一定要加上 timeout: 5000 (限制最多跑5秒，防止死循环)
@@ -128,17 +134,21 @@ io.on('connection', (socket) => {
 
       // API: child.stdout.on('data', (data) => { ... })
       // data 默认是 Buffer(二进制数据)，发给前端前必须 data.toString()！
-      // 发送 API: socket.emit('terminalOutput', 处理后的字符串);
-      child.stdout.on('data', (data) => socket.emit('terminalOutput', data.toString()));
+      // io.to(roomId).emit，实现全房间广播
+      child.stdout.on('data', (data) => {
+        io.to(roomId).emit('terminalOutput', data.toString());
+      });
 
-      // 发送 API: socket.emit('terminalError', 处理后的字符串);
-      child.stderr.on('data', (data) => socket.emit('terminalError', data.toString()));
+      child.stderr.on('data', (data) => {
+        io.to(roomId).emit('terminalError', data.toString());
+      });
 
       // API: child.on('close', async (exitCode) => { ... })
       // 动作 A: 告诉前端执行结束了 -> socket.emit('executionFinished', exitCode);
       // 动作 B (极度重要): 删除刚才生成的临时文件！ -> await fs.promises.unlink(filePath);
       child.on('close', async (exitCode) => {
-        socket.emit('executionFinished', exitCode);
+        io.to(roomId).emit('executionFinished', exitCode);
+
         // 清理战场：删除临时文件
         if (fs.existsSync(filePath)) {
           await fs.promises.unlink(filePath);
@@ -147,7 +157,7 @@ io.on('connection', (socket) => {
 
     } catch (err) {
       // 兜底：如果写入文件失败，通知前端
-      socket.emit('terminalError', `服务器内部错误: ${err.message}`);
+      io.to(roomId).emit('terminalError', `服务器内部错误: ${err.message}`);
     }
   });
 

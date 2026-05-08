@@ -149,12 +149,10 @@ function App() {
       writeLog('error', '未获取到房间号，无法运行代码');
       return;
     }
-    setIsRunning(true);
     const code = editorRef.current.getValue();  // 提取纯文本
-    writeLog('info', '正在运行代码...');
 
-    // 1. 通过 Socket 告知后端开始执行(用于状态同步)
-    if (currentSocket) currentSocket.emit('executeCode', code);
+    // 通过 Socket 向后端发送执行请求，携带当前代码和文件名
+    if (currentSocket) currentSocket.emit('executeCode', { roomId, code });
 
   }
 
@@ -208,6 +206,11 @@ function App() {
 
     currentSocket.on('terminalOutput', handleOutput);
     currentSocket.on('terminalError', handleError);
+    // 监听开始运行事件，这时候再统一更新所有人的 UI
+    currentSocket.on('executionStarted', () => {
+      setIsRunning(true);
+      writeLog('info', '正在运行代码...');  // 让所有人的终端都打印这句话
+    })
     currentSocket.on('executionFinished', (exitCode) => {
       handleFinish(exitCode);
       setIsRunning(false);
@@ -286,6 +289,7 @@ function App() {
       currentSocket.off('executionFinished', handleFinish);
       currentSocket.off('codeChange');
       currentSocket.off('initCodePackage');
+      currentSocket.off('executionStarted');
     }
   }, [currentSocket]);
 

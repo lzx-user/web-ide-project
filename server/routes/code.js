@@ -5,6 +5,7 @@ const router = require('express').Router();
 const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
+
 // 引用配置文件中的临时目录路径
 const tempDir = path.join(__dirname, '../temp');
 
@@ -24,15 +25,15 @@ router.post('/api/save', (req, res) => {
 /**
  * 接口：代码执行 (HTTP 短连接模式)
  */
-router.post('/api/run', (req, res) => {
-  const { code } = req.body;
-  const tempFilePath = path.join(tempDir, `run_${Date.now()}.js`);
-  fs.writeFileSync(tempFilePath, code);
+// router.post('/api/run', (req, res) => {
+//   const { code } = req.body;
+//   const tempFilePath = path.join(tempDir, `run_${Date.now()}.js`);
+//   fs.writeFileSync(tempFilePath, code);
 
-  exec(`node ${tempFilePath}`, (error, stdout, stderr) => {
-    if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
-    res.json({ success: !error, output: stderr || stdout || error?.message });
-  });
-});
+//   exec(`node ${tempFilePath}`, (error, stdout, stderr) => {
+//     if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+//     res.json({ success: !error, output: stderr || stdout || error?.message });
+//   });
+// });
 
 module.exports = router;
