@@ -1,15 +1,4 @@
-import React from 'react';
-
-/**
- * 模拟文件列表数据
- * 在真实项目中，这些数据通常来自后端 API 或全局状态管理（如 Redux/Context）
- */
-
-const FILE_LIST = [
-  { id: 1, name: 'index.js', type: 'file', icon: '📄' },
-  { id: 2, name: 'package.json', type: 'file', icon: '📄' },
-  { id: 3, name: 'style.css', type: 'file', icon: '📄' }
-];
+import React, { useState } from 'react';
 
 /**
  * Sidebar 组件 (侧边资源管理器)
@@ -19,7 +8,29 @@ const FILE_LIST = [
  * @param {Function} props.setActiveFile - 状态变更回调，用于通知父组件 App 切换当前编辑的文件。
  */
 
-export default function Sidebar({ activeFile, setActiveFile }) {
+export default function Sidebar({ activeFile, setActiveFile, fileList, setFileList, handleCreateFile }) {
+  // 控制输入框的显示与隐藏
+  const [showInput, setShowInput] = useState(false);
+  // 绑定输入框的值
+  const [newFileName, setNewFileName] = useState('');
+
+  // 处理键盘回车事件
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      if (newFileName.trim() === '') return; // 防止创建空文件
+
+      handleCreateFile(newFileName.trim());  // 调用父组件传来的创建文件函数
+
+      // 恢复原状
+      setNewFileName('');
+      setShowInput(false);
+    }
+    // 按 Esc 键取消新建
+    if (e.key === 'Escape') {
+      setNewFileName('');
+      setShowInput(false);
+    }
+  }
   return (
     <div className="w-[250px] bg-gray-800 border-r border-gray-700 flex flex-col">
       {/* 标题头部 */}
@@ -27,9 +38,33 @@ export default function Sidebar({ activeFile, setActiveFile }) {
         📂 资源管理器
       </div>
 
+      {/* 动态切换按钮和输入框 */}
+      {showInput ? (
+        <div className="p-2">
+          <input
+            autoFocus
+            type="text"
+            value={newFileName}
+            onChange={(e) => setNewFileName(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onBlur={() => setShowInput(false)}  // 失去焦点时隐藏输入框
+            className="w-full bg-gray-900 text-white px-2 text-sm border border-blue-500 outline-none"
+            placeholder="输入文件名回车..."
+          />
+        </div>
+      ) : (
+        <button
+          onClick={() => setShowInput(true)}
+          className="p-2 hover:bg-gray-700 text-gray-400 hover:text-white transition-colors text-left flex items-center gap-2"
+        >
+          <span>➕</span> 新建文件
+        </button>
+      )}
+
+
       {/* 文件列表区域 */}
       <div className="p-4 text-sm text-gray-400">
-        {FILE_LIST.map((file) => (
+        {fileList.map((file) => (
           <p
             key={file.id}
             onClick={() => setActiveFile(file.name)}

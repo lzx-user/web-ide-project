@@ -114,6 +114,37 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('codeChange', newCode);
   })
 
+  // 新建文件
+  socket.on('createFile', async (data) => {
+    const { roomId, filename } = data;
+    // 拼写出真实的文件路径，格式是：temp/房间ID_文件名
+    const filePath = path.join(tempDir, `${roomId}_${filename}`);
+
+    try {
+      // 检查文件是否已经存在，防止覆盖别人的代码
+      if (fs.existsSync(filePath)) {
+        // 如果文件已经存在，直接返回，不创建新文件了
+        socket.emit('terminalError', `创建文件：文件 ${filename} 已存在`);
+        return;
+      }
+
+      // 用 fs 创建一个空文件 (写入空字符串)，代表新文件已经创建好了
+      await fs.promises.writeFile(filePath, '', 'utf-8');
+
+      // 创建成功后，广播给房间里所有人（包括自己），让大家的资源管理器都更新文件列表
+      io.to(roomId).emit('fileCreated', {
+        id: Date.now(),  // 给前端用的唯一 key
+        name: filename,
+        type: 'file',
+        icon: '📄'
+      });
+
+    } catch (err) {
+      // 如果写文件失败了，通知前端
+      socket.emit('terminalError', `创建文件失败: ${err.message}`);
+    }
+  });
+
   // 监听：流式执行代码
   socket.on('executeCode', async (payload) => {
     // 兼容处理：从前端传来的对象中解构出代码字符串

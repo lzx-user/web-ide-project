@@ -7,6 +7,13 @@ const useIDEStore = create((set, get) => ({
   roomId: '',             // 房间号
   socket: null,           // WebSocket 实例
   activeFile: 'index.js', // 当前选中的文件
+  fileList: [],           // 文件列表
+  setFileList: (newList) => set({ fileList: newList }),  // 全量覆盖列表的方法 (用于初始化历史代码包)
+  // 追加单个文件的方法 (Zustand 的优雅写法)
+  // 相比于在组件里去拼数组，把逻辑封装在 Store 里更符合外企规范
+  addFileToFileList: (newFileObj) => set((state) => ({
+    fileList: [...state.fileList, newFileObj]
+  })),
 
   // 终端日志 (以文件名为 key 隔离)
   terminalLogsMap: {

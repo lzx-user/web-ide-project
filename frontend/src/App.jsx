@@ -37,6 +37,12 @@ function App() {
   const activeFile = useIDEStore(state => state.activeFile);
   const setActiveFile = useIDEStore(state => state.setActiveFile);
 
+  // 目录树状态
+  const fileList = useIDEStore(state => state.fileList);
+  const setFileList = useIDEStore(state => state.setFileList);
+  // 引入 Store 里的方法
+  const addFileToFileList = useIDEStore(state => state.addFileToFileList);
+
   const terminalLogsMap = useIDEStore(state => state.terminalLogsMap);
   const addLogToStore = useIDEStore(state => state.addLog);
 
@@ -113,6 +119,21 @@ function App() {
       console.log('加入房间失败:', err.message);
       writeLog('error', '系统错误: 无法建立连接');
     }
+  }
+
+  // 创建文件逻辑 只管emit事件，具体文件创建和同步逻辑由后端处理
+  const handleCreateFile = (filename) => {
+    if (currentSocket) {
+      // 像后端发送创建请求
+      currentSocket.emit('createFile', { roomId, filename });
+    }
+
+    const newFile = { id: Date.now(), name: filename, type: 'file', icon: '📄' };
+    setFileList([...fileList, newFile]);
+
+    // 通过 Socket.io 发送一个指令给后端，带上房间号和文件名。
+    if (currentSocket) currentSocket.emit('createFile', { roomId, filename });
+
   }
 
   // 保存代码逻辑
@@ -204,6 +225,12 @@ function App() {
     const handleError = (data) => writeLog('error', data);
     const handleFinish = (exitCode) => writeLog('info', `\n[进程执行完毕，退出码: ${exitCode}]`);
 
+    // 监听后端广播的文件创建成功事件
+    const handleFileCreated = (newFileObj) => {
+      // Zustand 优雅写法：直接调用 Store 里的追加方法，不用担心闭包问题，内部会自动拿到最新状态
+      addFileToFileList(newFileObj);
+    }
+    currentSocket.on('fileCreated', handleFileCreated);
     currentSocket.on('terminalOutput', handleOutput);
     currentSocket.on('terminalError', handleError);
     // 监听开始运行事件，这时候再统一更新所有人的 UI
@@ -256,6 +283,15 @@ function App() {
           }
         });
       }
+
+      // 把历史文件名提取出来，生成初始的 fileList 数组
+      const initFileList = Object.keys(codePackage).map((filename, index) => ({
+        id: index,
+        name: filename,
+        type: 'file',
+        icon: '📄'
+      }));
+      setFileList(initFileList);  // 塞进 React 状态里渲染侧边栏
     });
 
     // 拦截别人发过来的协同代码
@@ -290,6 +326,7 @@ function App() {
       currentSocket.off('codeChange');
       currentSocket.off('initCodePackage');
       currentSocket.off('executionStarted');
+      currentSocket.off('fileCreated', handleFileCreated);
     }
   }, [currentSocket]);
 
@@ -344,7 +381,13 @@ function App() {
 
   return (
     <div className="h-screen w-screen flex bg-gray-900 text-white font-sans">
-      <Sidebar activeFile={activeFile} setActiveFile={setActiveFile} />
+      <Sidebar
+        activeFile={activeFile}
+        setActiveFile={setActiveFile}
+        fileList={fileList}
+        setFileList={setFileList}
+        handleCreateFile={handleCreateFile}
+      />
 
       {/* 右侧：编辑器区域（flex-1占满剩余空间） */}
       <div className="flex-1 flex flex-col">
@@ -363,6 +406,7 @@ function App() {
           setCode={handleCodeChange}
           onMount={handleEditorDidMount}
         />
+
         {/* 渲染时，根据 activeFile 拿出对应的日志数组。如果还没生成，就传个空数组 */}
         <Terminal logs={terminalLogsMap[activeFile] || []} />
       </div>
