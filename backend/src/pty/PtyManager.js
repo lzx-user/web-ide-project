@@ -1,35 +1,48 @@
-// node-pty
-import * as os from 'node:os';
-import * as pty from 'node-pty';
-import { socket } from '../../frontend/src/services/socket';
+// 一个纯粹的管理器 写成一个类，每次有用户需要终端时，就 new 一个出来。
+const os = require('node:os');
+const pty = require('node-pty');
 
-// 1. 为每个房间创建一个 pty 进程
-const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
+class PtyManager {
+  constructor(socket, roomId) {
+    this.socket = socket;
+    this.roomId = roomId;
 
-const ptyProcess = pty.spawn(shell, [], {
-  name: 'xterm-color',
-  cols: 80,
-  row: 30,
-  cwd: process.env.HOME,
-  env: process.env
-});
+    // 为每个房间创建一个 pty 进程
+    const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
 
-// ptyProcess.onData((data) => {
-//   process.stdout.write(data);
-// });
+    // 1. 创建进程
+    this.ptyProcess = pty.spawn(shell, [], {
+      name: 'xterm-color',
+      cols: 80,
+      rows: 30,
+      cwd: process.env.HOME || process.cwd(),
+      env: process.env
+    });
 
-// ptyProcess.write('ls\r');
-// ptyProcess.resize(100, 40);
-// ptyProcess.write('ls\r');
+    // 2. 监听进程输出，推给前端
+    this.ptyProcess.on('data', (data) => {
+      console.log('3. [后端] Pty进程产生输出:', JSON.stringify(data)); // 埋点
+      // 只发给当前触发的这个 socket, 或者发给整个房间
+      this.socket.emit('terminal-out', data);
+    });
 
-// 2. 监听前端发来的输入
-socket.on('terminal-in', (data) => {
-  ptyProcess.write(data);  // 写入用户输入
-});
+    // 3. 监听前端输入，写入进程
+    this.socket.on('terminal-in', (data) => {
+      console.log('2. [后端] 收到前端输入指令:', JSON.stringify(data)); // 埋点
+      this.ptyProcess.write(data);
+    });
+  }
 
-// 3. 捕获 pty 的输出，实时发给后端
-ptyProcess.on('data', (chunk) => {
-  io.to(roomId).emit('terminal-out', chunk.toString());
-})
+  // 预留调整大小的方法
+  resize(cols, rows) {
+    this.ptyProcess.resize(cols, rows);
+  }
 
-module.exports = ptyProcess;
+  // 销毁方法：用户断开时一定要清理，防止服务器卡死
+  destroy() {
+    this.socket.removeAllListeners('terminal-in');
+    this.ptyProcess.kill();
+  }
+}
+
+module.exports = PtyManager;

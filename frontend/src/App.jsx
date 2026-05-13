@@ -7,6 +7,7 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import CodeEditor from './components/CodeEditor';
 import Terminal from './components/Terminal';
+import XTerminal from './components/XTerminal';
 import Login from './components/Login';
 import { socket, connectSocket } from './services/socket';
 import request from './services/request';  // 统一请求封装
@@ -473,6 +474,14 @@ function App() {
 
         {/* 渲染时，根据 activeFile 拿出对应的日志数组。如果还没生成，就传个空数组 */}
         <Terminal logs={terminalLogsMap[activeFile] || []} />
+        {/* {currentSocket && (
+          <div className="h-80">
+            <XTerminal currentSocket={currentSocket} />
+          </div>
+        )} */}
+        <div className="h-64 w-full border-t border-gray-700 bg-[#1e1e1e]">
+          {currentSocket && <XTerminal currentSocket={currentSocket} />}
+        </div>
       </div>
     </div>
   );

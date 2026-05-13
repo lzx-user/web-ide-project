@@ -5,7 +5,7 @@
 const router = require('express').Router();
 const jwt = require('jsonwebtoken');
 // 引用配置文件中的 JWT 密钥与过期时间
-const config = require('../config');
+const config = require('../../config');
 
 router.post('/api/join', (req, res) => {
   const { username, roomId } = req.body;

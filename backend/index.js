@@ -7,9 +7,9 @@ const http = require('http');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const { spawn } = require('child_process');
-const roomRouter = require('./routes/room');
-const codeRouter = require('./routes/code');
-const PtyManager = require('./pty/PtyManager');
+const roomRouter = require('./src/routes/room');
+const codeRouter = require('./src/routes/code');
+const PtyManager = require('./src/pty/PtyManager');
 // 1. 引入统一配置文件
 const config = require('./config');
 
@@ -190,8 +190,15 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 初始化用户的专属伪终端
+  const userPty = new PtyManager(socket, roomId);
+
   socket.on('disconnect', () => {
     console.log(`[房间 ${roomId}] 用户 ${username} 已离开`);
+    // 用户离开时，销毁属于他的终端进程
+    if (userPty) {
+      userPty.destroy();
+    }
   })
 })
 
