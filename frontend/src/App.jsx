@@ -66,6 +66,13 @@ function App() {
     addLogToStore(currentFile, type, text);  // 把日志追加到当前文件对应的日志数组里
   }
 
+  // 清除持久化状态的函数
+  const clearPersistedState = () => {
+    localStorage.removeItem('ide_token');
+    localStorage.removeItem('ide_roomId');
+    localStorage.removeItem('ide_isJoined');
+  }
+
   // 4. 核心业务处理器
 
   // 捕获编辑器实例的回调函数 (传给 CodeEditor) 
@@ -101,6 +108,8 @@ function App() {
       if (data.success) {
         // 2. 持久化Token到 localStorage 并在 URL 中记录 roomId
         localStorage.setItem('ide_token', data.token);
+        localStorage.setItem('ide_roomId', roomIdInput);
+        localStorage.setItem('ide_isJoined', 'true');  // 持久化登陆状态
         window.history.pushState({}, '', `?roomId=${roomIdInput}`);  // 用户刷新页面时能自动恢复到该房间
 
         // 更新 Zustand 全局状态
@@ -127,13 +136,6 @@ function App() {
       // 像后端发送创建请求
       currentSocket.emit('createFile', { roomId, filename });
     }
-
-    const newFile = { id: Date.now(), name: filename, type: 'file', icon: '📄' };
-    setFileList([...fileList, newFile]);
-
-    // 通过 Socket.io 发送一个指令给后端，带上房间号和文件名。
-    if (currentSocket) currentSocket.emit('createFile', { roomId, filename });
-
   }
 
   // 保存代码逻辑
@@ -200,6 +202,9 @@ function App() {
 
     const currentFile = useIDEStore.getState().activeFile;  // 从金库里拿最新的当前文件
 
+    // 把每一笔敲下的代码实时拍进本地硬盘
+    localStorage.setItem(`draft-${roomId}-${currentFile}`, newCode);
+
     // 如果当前代码等于刚刚 Socket 塞进来的代码，说明这是别人改的，不要再发回去了，直接返回
     if (newCode === lastReceivedCodeRef.current[currentFile]) return;
 
@@ -213,7 +218,31 @@ function App() {
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const roomFromUrl = urlParams.get('roomId');
-    if (roomFromUrl) setRoomId(roomFromUrl);
+
+    // 检查本地存储是否有持久化状态
+    const savedToken = localStorage.getItem('ide_token');
+    const savedRoomId = localStorage.getItem('ide_roomId');
+    const savedIsJoined = localStorage.getItem('ide_isJoined') === 'true';
+
+    if (roomFromUrl) {
+      setRoomId(roomFromUrl);
+    }
+
+    // 如果有持久化状态且token有效，自动恢复登陆状态
+    if (savedToken && savedRoomId && savedIsJoined) {
+      setRoomId(savedRoomId);
+      setJoined(true);
+
+      // 读取上次离开前正在看的文件
+      const savedActiveFile = localStorage.getItem('ide_activeFile');
+      if (savedActiveFile) {
+        setActiveFile(savedActiveFile);
+      }
+
+      // 自动建立 Socket 连接
+      const s = connectSocket(savedRoomId, savedToken);
+      setCurrentSocket(s);
+    }
   }, []);
 
   // Socket 消息监听：终端回音
@@ -244,6 +273,15 @@ function App() {
     });
     currentSocket.on('connect', () => console.log('WebSocket 已连接'));
 
+    // 连接错误时清除持久化状态
+    currentSocket.on('connect_error', (err) => {
+      console.log('连接失败详情:', err.message);
+      // 清除持久化状态，防止无限重连
+      clearPersistedState();
+      setJoined(false);
+      alert("连接服务器失败，可能是登录已过期，请重新进入房间。");
+    });
+
     // 监听后端发来的历史代码包
     currentSocket.on('initCodePackage', (codePackage) => {
       // 如果已经初始化过，说明这是断线重连，直接拒收旧代码！
@@ -252,11 +290,21 @@ function App() {
 
       console.log('📦 收到房间历史代码包:', codePackage);
 
+      // 判断是不是 空房间
+      if (Object.keys(codePackage).length === 0) {
+        setActiveFile('');  // 清除默认的index.js
+        setFileList([]);  // 清空左侧文件树
+        setCurrentCode('');  // 清空编辑器内容
+        return;
+      }
+
       // 1. 用 getState() 取最新文件
       const targetFile = useIDEStore.getState().activeFile;  // 从金库里拿最新的目标文件名
-      if (codePackage[targetFile]) {
+      if (codePackage[targetFile] !== undefined) {
+        // 同样去缓存找一下当前文件的草稿
+        const draftCode = localStorage.getItem(`draft-${roomId}-${targetFile}`);
         // 更新 React状态，让编辑器初始显示这段代码
-        setCurrentCode(codePackage[targetFile]);
+        setCurrentCode(draftCode !== null ? draftCode : codePackage[targetFile]);
       }
       // 2. 如果 Monaco 实例已经准备好了，把所有文件塞进底层模型
       if (monacoRef.current) {
@@ -272,9 +320,14 @@ function App() {
               cache.model.setValue(code);
             }
           } else {
+            // 如果服务器发来的是没保存的代码，先去本地兜底找
+            const draftCode = localStorage.getItem(`draft-${roomId}-${filename}`);
+            // 如果本地有草稿，优先用草稿的，否则用服务器的
+            const finalCode = draftCode !== null ? draftCode : code;
+
             // 如果没有，就创建一个新的模型（说明这个文件之前没被打开过，是个新文件）
             const newModel = monacoRef.current.editor.createModel(
-              code,
+              finalCode,
               'javascript',
               monacoRef.current.Uri.parse(`file://${filename}`)
             );
@@ -340,6 +393,9 @@ function App() {
     const prevFile = prevFileRef.current;
     const targetFile = activeFile;
 
+    // 每次文件真正切换时，存入本地记忆
+    localStorage.setItem('ide_activeFile', targetFile);
+
     // 1. 整理旧文件现场：保存当前看的文件进度(viewState)
     if (prevFile && fileCacheMap.current.has(prevFile)) {
       const currentState = editor.saveViewState();  // 记录光标的位置'
@@ -352,14 +408,22 @@ function App() {
 
     // 3. 如果没有就创建一个新的模型
     if (!targetCache) {
+      // 去缓存里拿离线代码，如果没有就给空字符串
+      const draftCode = localStorage.getItem(`draft-${roomId}-${targetFile}`) || '';
       // (在真实项目中，这里可能需要去发 axios 请求获取文件内容，这里我们先用空字符串代替)
       const newModel = monaco.editor.createModel(
-        '', // 新文件初始内容
+        draftCode,  // 离线代码
         'javascript',
         monaco.Uri.parse(`file://${targetFile}`)  // 根据targetFile的后缀判断是css还是json
       );
       targetCache = { model: newModel, viewState: null };
       fileCacheMap.current.set(targetFile, targetCache);  // 存入缓存
+
+      // 同步到 React 状态，让界面刷新
+      setCurrentCode(draftCode);
+    } else {
+      // 如果文件已经打开过，也要同步一下状态
+      setCurrentCode(targetCache.model.getValue());
     }
 
     // 4. 切换模型并恢复视图状态

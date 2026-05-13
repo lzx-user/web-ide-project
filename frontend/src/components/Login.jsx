@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 /**
  * Login 组件 (登录与协作大厅)
@@ -31,7 +31,7 @@ function Login({ onJoinRoom, initialRoomId }) {
       <div className="bg-white p-8 rounded-xl shadow-lg border border-slate-200 w-96">
         {/* 标题 */}
         <h1 className="text-2xl font-bold mb-6 text-center text-blue-600">Web IDE 协作空间</h1>
-        {/* 表单内容 */}
+
         <div className="flex flex-col gap-4">
           {/* 昵称输入框 */}
           <input
