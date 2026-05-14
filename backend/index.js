@@ -12,6 +12,7 @@ const codeRouter = require('./src/routes/code');
 const PtyManager = require('./src/pty/PtyManager');
 // 1. 引入统一配置文件
 const config = require('./config');
+const { randomUUID } = require('crypto');
 
 /**
  * Web IDE 后端核心服务
@@ -148,8 +149,8 @@ io.on('connection', (socket) => {
     // 兼容处理：从前端传来的对象中解构出代码字符串
     const codeStr = typeof payload === 'object' ? payload.code : payload;
 
-    // 生成一个独一无二的临时文件路径
-    const filePath = path.join(tempDir, `stream_${Date.now()}.js`);
+    // 使用 UUID 替代 Date.now(), 彻底杜绝高并发下的文件名冲突
+    const filePath = path.join(tempDir, `stream_${randomUUID()}.js`);
 
     try {
       // 在准备写入文件和执行前，先广播给所有人：有人触发了运行！
@@ -160,6 +161,12 @@ io.on('connection', (socket) => {
       // API: spawn('node', [要执行的文件路径], { 配置对象 })
       // 安全要点: 配置对象里一定要加上 timeout: 5000 (限制最多跑5秒，防止死循环)
       const child = spawn('node', [filePath], { timeout: 5000 });
+
+      // error 事件兜底 防止进程级别报错导致整个后端宕机
+      child.on('error', (err) => {
+        console.log('子进程启动失败:', err);
+        io.to(roomId).emit('terminalError', `\n[系统错误: 无法启动运行环境 ${err.message}]`);
+      });
 
       // API: child.stdout.on('data', (data) => { ... })
       // data 默认是 Buffer(二进制数据)，发给前端前必须 data.toString()！
@@ -182,7 +189,7 @@ io.on('connection', (socket) => {
         if (fs.existsSync(filePath)) {
           await fs.promises.unlink(filePath);
         }
-      })
+      });
 
     } catch (err) {
       // 兜底：如果写入文件失败，通知前端

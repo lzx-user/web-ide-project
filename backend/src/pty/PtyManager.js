@@ -43,7 +43,14 @@ class PtyManager {
   // 销毁方法：用户断开时一定要清理，防止服务器卡死
   destroy() {
     this.socket.removeAllListeners('terminal-in');
-    this.ptyProcess.kill();
+    try {
+      // 退出进程，防止孤儿进程占用系统资源
+      if (this.ptyProcess) {
+        this.ptyProcess.kill();
+      }
+    } catch (error) {
+      console.log('PTY 进程已销毁或无需销毁');
+    }
   }
 }
 

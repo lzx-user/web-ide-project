@@ -4,6 +4,8 @@ import axios from 'axios';
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
 import toast, { Toaster } from 'react-hot-toast';
+import { STORAGE_KEYS } from './utils/constants';
+import useWorkspaceSocket from './hooks/useWorkspaceSocket';
 
 // 组件与服务引入
 import Sidebar from './components/Sidebar';
@@ -65,9 +67,10 @@ function App() {
 
   // 清除持久化状态的函数
   const clearPersistedState = () => {
-    localStorage.removeItem('ide_token');
-    localStorage.removeItem('ide_roomId');
-    localStorage.removeItem('ide_isJoined');
+    localStorage.removeItem(STORAGE_KEYS.TOKEN);
+    localStorage.removeItem(STORAGE_KEYS.ROOM_ID);
+    localStorage.removeItem(STORAGE_KEYS.IS_JOINED);
+    localStorage.removeItem(STORAGE_KEYS.ACTIVE_FILE);
   };
 
   // 4. 核心业务处理器
@@ -104,10 +107,10 @@ function App() {
 
       if (data.success) {
         // 2. 持久化Token到 localStorage 并在 URL 中记录 roomId
-        localStorage.setItem('ide_token', data.token);
-        localStorage.setItem('ide_roomId', roomIdInput);
-        localStorage.setItem('ide_isJoined', 'true'); // 持久化登陆状态
-        window.history.pushState({}, '', `?roomId=${roomIdInput}`); // 用户刷新页面时能自动恢复到该房间
+        localStorage.setItem(STORAGE_KEYS.TOKEN, data.token);
+        localStorage.setItem(STORAGE_KEYS.ROOM_ID, roomIdInput);
+        localStorage.setItem(STORAGE_KEYS.IS_JOINED, 'true');   // 持久化登陆状态
+        window.history.pushState({}, '', `?roomId=${roomIdInput}`);  // 用户刷新页面时能自动恢复到该房间
 
         // 更新 Zustand 全局状态
         setRoomId(roomIdInput);
@@ -223,6 +226,25 @@ function App() {
     debouncedEmitCode(newCode);
   };
 
+  // 专门的卸载监听器
+  useEffect(() => {
+    // 组件卸载时，清空可能还处于倒计时中的防抖函数
+    return () => {
+      debouncedEmitCode.cancel();
+    };
+  }, [debouncedEmitCode]);
+
+  // 用于彻底销毁底层编辑器模型
+  useEffect(() => {
+    // 页面刷新或彻底退出 IDE 界面时，销毁所有驻留内存的 Monaco Model
+    return () => {
+      if (monacoRef.current) {
+        const models = monacoRef.current.editor.getModels();
+        models.forEach((model) => model.dispose());
+        console.log('已清理所有 Monaco Model 防止内存泄漏');
+      }
+    };
+  }, []);
   // 5. 副作用监听 (URL & Socket)
 
   // 初始化：检查 URL 房间参数
@@ -231,9 +253,9 @@ function App() {
     const roomFromUrl = urlParams.get('roomId');
 
     // 检查本地存储是否有持久化状态
-    const savedToken = localStorage.getItem('ide_token');
-    const savedRoomId = localStorage.getItem('ide_roomId');
-    const savedIsJoined = localStorage.getItem('ide_isJoined') === 'true';
+    const savedToken = localStorage.getItem(STORAGE_KEYS.TOKEN);
+    const savedRoomId = localStorage.getItem(STORAGE_KEYS.ROOM_ID);
+    const savedIsJoined = localStorage.getItem(STORAGE_KEYS.IS_JOINED) === 'true';
 
     if (roomFromUrl) {
       setRoomId(roomFromUrl);
@@ -245,7 +267,7 @@ function App() {
       setJoined(true);
 
       // 读取上次离开前正在看的文件
-      const savedActiveFile = localStorage.getItem('ide_activeFile');
+      const savedActiveFile = localStorage.getItem(STORAGE_KEYS.ACTIVE_FILE);
       if (savedActiveFile) {
         setActiveFile(savedActiveFile);
       }
@@ -256,156 +278,36 @@ function App() {
     }
   }, []);
 
-  // Socket 消息监听：终端回音
-  useEffect(() => {
-    // 安全门防崩。如果 socket 是 null，直接中断执行  **防御性编程**防止组件未挂载时找不到 socket 实例。
-    if (!currentSocket) return;
+  /// 5. 挂载自定义 Hook：接管所有 Socket 核心业务通信
+  // 为了让 Hook 里的 monaco 实例获取正确，将 monacoRef 挂载到 fileCacheMap 上传递
+  fileCacheMap.current.monacoRef = monacoRef;
 
-    const handleOutput = (data) => writeLog('info', data);
-    const handleError = (data) => writeLog('error', data);
-    const handleFinish = (exitCode) =>
-      writeLog('info', `\n[进程执行完毕，退出码: ${exitCode}]`);
-
-    // 监听后端广播的文件创建成功事件
-    const handleFileCreated = (newFileObj) => {
-      // Zustand 优雅写法：直接调用 Store 里的追加方法，不用担心闭包问题，内部会自动拿到最新状态
-      addFileToFileList(newFileObj);
-    };
-    currentSocket.on('fileCreated', handleFileCreated);
-    currentSocket.on('terminalOutput', handleOutput);
-    currentSocket.on('terminalError', handleError);
-    // 监听开始运行事件，这时候再统一更新所有人的 UI
-    currentSocket.on('executionStarted', () => {
-      setIsRunning(true);
-      writeLog('info', '正在运行代码...'); // 让所有人的终端都打印这句话
-    });
-    currentSocket.on('executionFinished', (exitCode) => {
-      handleFinish(exitCode);
-      setIsRunning(false);
-    });
-    currentSocket.on('connect', () => console.log('WebSocket 已连接'));
-
-    // 连接错误时清除持久化状态
-    currentSocket.on('connect_error', (err) => {
-      console.log('连接失败详情:', err.message);
-      // 清除持久化状态，防止无限重连
-      clearPersistedState();
-      setJoined(false);
-      alert('连接服务器失败，可能是登录已过期，请重新进入房间。');
-    });
-
-    // 监听后端发来的历史代码包
-    currentSocket.on('initCodePackage', (codePackage) => {
-      // 如果已经初始化过，说明这是断线重连，直接拒收旧代码！
-      if (hasInitializedRef.current) return;
-      hasInitializedRef.current = true; // 标记已经初始化过了
-
-      console.log('📦 收到房间历史代码包:', codePackage);
-
-      // 判断是不是 空房间
-      if (Object.keys(codePackage).length === 0) {
-        setActiveFile(''); // 清除默认的index.js
-        setFileList([]); // 清空左侧文件树
-        setCurrentCode(''); // 清空编辑器内容
-        return;
-      }
-
-      // 1. 用 getState() 取最新文件
-      const targetFile = useIDEStore.getState().activeFile; // 从金库里拿最新的目标文件名
-      if (codePackage[targetFile] !== undefined) {
-        // 同样去缓存找一下当前文件的草稿
-        const draftCode = localStorage.getItem(`draft-${roomId}-${targetFile}`);
-        // 更新 React状态，让编辑器初始显示这段代码
-        setCurrentCode(
-          draftCode !== null ? draftCode : codePackage[targetFile]
-        );
-      }
-      // 2. 如果 Monaco 实例已经准备好了，把所有文件塞进底层模型
-      if (monacoRef.current) {
-        // 遍历代码包里的每个文件，创建模型并存入缓存 entries() 方法会返回一个给定对象自身可枚举属性的键值对数组 方便遍历
-        Object.entries(codePackage).forEach(([filename, code]) => {
-          // 把服务器发来的代码记录在小本本上，以便在收到后续的代码变更时能正确判断是否需要更新编辑器内容
-          lastReceivedCodeRef.current[filename] = code;
-
-          let cache = fileCacheMap.current.get(filename); // 先看看文件柜里有没有这个文件的模型
-          if (cache) {
-            // 如果有，就更新模型内容（说明这个文件之前就被打开过了）
-            if (cache.model.getValue() !== code) {
-              cache.model.setValue(code);
-            }
-          } else {
-            // 如果服务器发来的是没保存的代码，先去本地兜底找
-            const draftCode = localStorage.getItem(
-              `draft-${roomId}-${filename}`
-            );
-            // 如果本地有草稿，优先用草稿的，否则用服务器的
-            const finalCode = draftCode !== null ? draftCode : code;
-
-            // 如果没有，就创建一个新的模型（说明这个文件之前没被打开过，是个新文件）
-            const newModel = monacoRef.current.editor.createModel(
-              finalCode,
-              'javascript',
-              monacoRef.current.Uri.parse(`file://${filename}`)
-            );
-            // 存入文件柜，初始视图状态为 null
-            fileCacheMap.current.set(filename, {
-              model: newModel,
-              viewState: null,
-            });
-          }
-        });
-      }
-
-      // 把历史文件名提取出来，生成初始的 fileList 数组
-      const initFileList = Object.keys(codePackage).map((filename, index) => ({
-        id: index,
-        name: filename,
-        type: 'file',
-        icon: '📄',
-      }));
-      setFileList(initFileList); // 塞进 React 状态里渲染侧边栏
-    });
-
-    // 拦截别人发过来的协同代码
-    currentSocket.on('codeChange', (payload) => {
-      const { code, filename } = payload;
-
-      // 如果发现解构出来的代码不是字符串，直接拦截，防止白屏
-      if (typeof code !== 'string') return;
-
-      // 记录最后一次收到的代码和对应的文件名，以便在 handleCodeChange 里判断这段代码是不是别人改的
-      lastReceivedCodeRef.current[filename] = code;
-
-      // 直接去文件柜里找别人改的那个文件
-      const targetCache = fileCacheMap.current.get(filename);
-
-      // 如果文件柜里有，直接悄悄修改底层 Model 的内容
-      // 这里千万不能用 setCurrentCode，因为 setCurrentCode 会强行触发整个页面的重新渲染！
-      // Monaco 的 setValue 是静默修改底层数据，极其丝滑，不会引起 React 的任何 re-render，所以编辑器实例不会丢失，用户体验极佳。
-      if (targetCache) {
-        // 额外加一个判断：为了防止光标乱跳，只有当传过来的代码和现在的代码不一样时才修改
-        if (targetCache.model.getValue() !== code) {
-          targetCache.model.setValue(code);
-        }
-      }
-    });
-
-    // 清理监听器，防止内存泄漏和重复监听
-    return () => {
-      currentSocket.off('terminalOutput', handleOutput);
-      currentSocket.off('terminalError', handleError);
-      currentSocket.off('executionFinished', handleFinish);
-      currentSocket.off('codeChange');
-      currentSocket.off('initCodePackage');
-      currentSocket.off('executionStarted');
-      currentSocket.off('fileCreated', handleFileCreated);
-    };
-  }, [currentSocket]);
+  useWorkspaceSocket({
+    currentSocket,
+    roomId,
+    fileCacheMap,
+    lastReceivedCodeRef,
+    hasInitializedRef,
+    setCurrentCode,
+    setIsRunning,
+    setJoined,
+    clearPersistedState
+  });
 
   // 监听切换文件的动作
   useEffect(() => {
     const editor = editorRef.current;
     const monaco = monacoRef.current;
+
+    // 读取离线草稿 辅助函数
+    const safeGetLocalStorage = (key) => {
+      try {
+        return localStorage.getItem(key);
+      } catch (error) {
+        console.warn('读取本地存储失败 (可能处于无痕模式):', error);
+        return null;
+      }
+    };
     // 防御性编程：如果编辑器或 Monaco 实例尚未准备好，则不进行切换
     if (!editor || !monaco) return;
 
@@ -425,11 +327,11 @@ function App() {
     // 2. 找新文件：去fileCacheMap中查找目标文件
     let targetCache = fileCacheMap.current.get(targetFile);
 
+
     // 3. 如果没有就创建一个新的模型
     if (!targetCache) {
       // 去缓存里拿离线代码，如果没有就给空字符串
-      const draftCode =
-        localStorage.getItem(`draft-${roomId}-${targetFile}`) || '';
+      const draftCode = safeGetLocalStorage(STORAGE_KEYS.getDraftKey(roomId, targetFile));
       // (在真实项目中，这里可能需要去发 axios 请求获取文件内容，这里我们先用空字符串代替)
       const newModel = monaco.editor.createModel(
         draftCode, // 离线代码
