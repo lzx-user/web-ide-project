@@ -8,7 +8,7 @@ import React from "react";
  * 2. 防重复点击：利用 disabled 属性，在保存或运行时交叉锁死按钮，防止用户连续点击触发多重网络请求。
  */
 
-export default function Header({ activeFile, isRunning, onRun, onSave, isSaving }) {
+export default function Header({ activeFile, isRunning, onRun, onSave, isSaving, onLeave }) {
   return (
     <div className="h-12 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-6">
       {/* 左侧区域：项目与文件路径面包屑 */}
@@ -24,8 +24,8 @@ export default function Header({ activeFile, isRunning, onRun, onSave, isSaving 
           onClick={onSave}
           disabled={isSaving || isRunning} // 如果正在运行或正在保存，则禁用
           className={`px-4 py-2 rounded transition-colors text-white ${isSaving
-              ? 'bg-gray-500 cursor-not-allowed'
-              : 'bg-blue-600 hover:bg-blue-700'
+            ? 'bg-gray-500 cursor-not-allowed'
+            : 'bg-blue-600 hover:bg-blue-700'
             }`}
         >
           {isSaving ? '⏳ 保存中...' : '💾 保存 (Save)'}
@@ -36,11 +36,20 @@ export default function Header({ activeFile, isRunning, onRun, onSave, isSaving 
           onClick={onRun}
           disabled={isRunning || isSaving} // 交叉互锁：保存时也不能运行
           className={`px-4 py-2 rounded transition-colors text-white ${isRunning
-              ? 'bg-gray-500 cursor-not-allowed'
-              : 'bg-green-600 hover:bg-green-700'
+            ? 'bg-gray-500 cursor-not-allowed'
+            : 'bg-green-600 hover:bg-green-700'
             }`}
         >
           {isRunning ? '⏳ 运行中...' : '▶ 运行 (Run)'}
+        </button>
+
+        {/* --- 新增的退出按钮 --- */}
+        <button
+          onClick={onLeave}
+          className="bg-red-600/80 hover:bg-red-600 px-4 py-1.5 rounded text-sm transition-colors border border-red-500/30"
+          title="退出当前协作房间"
+        >
+          退出房间
         </button>
       </div>
     </div>

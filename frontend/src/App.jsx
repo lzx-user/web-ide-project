@@ -180,6 +180,21 @@ function App() {
 
   }
 
+  // 退出房间
+  const handleLeaveRoom = () => {
+    // 1. 清理浏览器的本地存储缓存
+    clearPersistedState();
+
+    // 2. 告诉后端我要断开了
+    if (currentSocket) {
+      currentSocket.disconnect();
+    }
+
+    // 3. 直接跳转回根路径，并刷新整个页面状态
+    // 瞬间清空所有的 React 状态，内存缓存，并重新渲染 Login 页面
+    window.location.href = '/';
+  };
+
   // 代码变更同步(含防抖)  降维打击闭包陷阱！
   const debouncedEmitCode = useCallback(
     debounce((code) => {
@@ -463,6 +478,7 @@ function App() {
           isRunning={isRunning}
           onSave={handleSave}
           onRun={handleRun}
+          onLeave={handleLeaveRoom}
         />
 
         {/* 传入挂载拦截器 handleEditorDidMount */}
@@ -473,12 +489,7 @@ function App() {
         />
 
         {/* 渲染时，根据 activeFile 拿出对应的日志数组。如果还没生成，就传个空数组 */}
-        <Terminal logs={terminalLogsMap[activeFile] || []} />
-        {/* {currentSocket && (
-          <div className="h-80">
-            <XTerminal currentSocket={currentSocket} />
-          </div>
-        )} */}
+        {/* <Terminal logs={terminalLogsMap[activeFile] || []} /> */}
         <div className="h-64 w-full border-t border-gray-700 bg-[#1e1e1e]">
           {currentSocket && <XTerminal currentSocket={currentSocket} />}
         </div>
