@@ -1,6 +1,6 @@
 @import 'tailwindcss';
 
-/* 自定义现代风格的暗色滚动条 */
+/* 自定义现代风格的亮色滚动条 */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -11,20 +11,21 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #30363d;
-  border: 2px solid #0d1117;
-  /* 与背景色相同，制造悬浮感 */
+  background: #d1d5db;
+  /* 浅灰色 */
+  border: 2px solid #ffffff;
+  /* 与亮色背景融为一体 */
   border-radius: 8px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #484f58;
+  background: #9ca3af;
 }
 
-/* 覆盖 allotment 的默认分割线颜色，使其融入暗黑主题 */
+/* 覆盖 allotment 的默认分割线颜色，适配亮黑主题 */
 :root {
-  --focus-border: #2f81f7;
-  /* 拖拽时的高亮蓝 */
-  --separator-border: #30363d;
-  /* 默认的边框灰 */
+  --focus-border: #3b82f6;
+  /* 拖拽时的高亮蓝不变 */
+  --separator-border: #e5e7eb;
+  /* 极浅的灰色边框 */
 }

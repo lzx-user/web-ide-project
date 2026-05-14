@@ -11,17 +11,18 @@ export default function CodeEditor({ onMount, code, setCode }) {
       <Editor
         height="100%"
         language="javascript"
-        theme="vs-dark"
+        theme="light"
         value={code} // 永远只接收 App.jsx 传来的纯文本字符串
         onChange={(value) => setCode(value)} // 用户打字时，直接把最新字符串汇报给 App.jsx
         onMount={onMount}
         options={{
-          fontSize: 16,
+          fontSize: 15,
           minimap: { enabled: false },
           wordWrap: 'on',
           padding: { top: 16 },
           automaticLayout: true,
           scrollBeyondLastLine: false,
+          fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace", // 推荐的极客字体
         }}
       />
     </div>

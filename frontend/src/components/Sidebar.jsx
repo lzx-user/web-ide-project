@@ -38,14 +38,13 @@ export default function Sidebar({
     }
   };
   return (
-    <div className="w-full h-full bg-[#161b22] flex flex-col shrink-0">
-      {/* 标题头部 */}
-      <div className="h-12 px-4 border-b border-[#30363d] flex items-center text-gray-300 font-medium text-sm tracking-wide gap-2">
-        <FolderKanban size={18} className="text-blue-400" />
+    // 背景改为极浅的灰色 #f8f9fa，边框改为极淡的 gray-200
+    <div className="w-full h-full bg-[#f8f9fa] flex flex-col shrink-0">
+      <div className="h-12 px-4 border-b border-gray-200 flex items-center text-gray-700 font-medium text-sm tracking-wide gap-2">
+        <FolderKanban size={18} className="text-blue-600" />
         资源管理器
       </div>
 
-      {/* 动态切换按钮和输入框 */}
       <div className="p-3">
         {showInput ? (
           <div className="relative flex items-center">
@@ -56,12 +55,12 @@ export default function Sidebar({
               onChange={(e) => setNewFileName(e.target.value)}
               onKeyDown={handleKeyDown}
               onBlur={() => setShowInput(false)}
-              className="w-full bg-[#0d1117] text-gray-200 px-3 py-1.5 text-sm rounded border border-blue-500 outline-none focus:ring-1 focus:ring-blue-500 transition-all shadow-sm"
-              placeholder="输入文件名回车..."
+              className="w-full bg-white text-gray-800 px-3 py-1.5 text-sm rounded-md border border-blue-400 outline-none focus:ring-2 focus:ring-blue-100 transition-all shadow-sm"
+              placeholder="文件名..."
             />
             <button
               onMouseDown={(e) => { e.preventDefault(); setShowInput(false); }}
-              className="absolute right-2 text-gray-500 hover:text-gray-300"
+              className="absolute right-2 text-gray-400 hover:text-gray-600"
             >
               <X size={14} />
             </button>
@@ -69,14 +68,13 @@ export default function Sidebar({
         ) : (
           <button
             onClick={() => setShowInput(true)}
-            className="w-full flex items-center justify-center gap-2 py-1.5 rounded text-sm text-gray-400 border border-dashed border-gray-600 hover:border-gray-400 hover:text-gray-200 transition-colors"
+            className="w-full flex items-center justify-center gap-2 py-1.5 rounded-md text-sm text-gray-500 border border-dashed border-gray-300 hover:border-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-all"
           >
             <Plus size={16} /> 新建文件
           </button>
         )}
       </div>
 
-      {/* 文件列表区域 */}
       <div className="flex-1 overflow-y-auto py-1">
         {fileList.map((file) => {
           const isActive = activeFile === file.name;
@@ -85,13 +83,13 @@ export default function Sidebar({
               key={file.id}
               onClick={() => setActiveFile(file.name)}
               className={`group cursor-pointer flex items-center gap-2.5 px-4 py-2 text-sm transition-all ${isActive
-                ? 'bg-[#0d1117] text-blue-400 border-l-2 border-blue-500' // 精细的高亮指示线
-                : 'text-gray-400 border-l-2 border-transparent hover:bg-[#2a2d2e] hover:text-gray-200'
+                  ? 'bg-blue-50 text-blue-700 border-l-2 border-blue-600' // 亮色模式下的经典选中态
+                  : 'text-gray-600 border-l-2 border-transparent hover:bg-gray-100 hover:text-gray-900'
                 }`}
             >
               <FileCode2
                 size={16}
-                className={isActive ? "text-blue-400" : "text-gray-500 group-hover:text-gray-400"}
+                className={isActive ? "text-blue-600" : "text-gray-400 group-hover:text-gray-500"}
               />
               <span className="truncate">{file.name}</span>
             </div>

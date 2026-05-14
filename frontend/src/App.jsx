@@ -463,14 +463,12 @@ function App() {
   }
 
   return (
-    // 最外层容器改为 flex flex-col，为底部的状态栏留出位置
-    <div className="h-screen w-screen bg-[#0d1117] text-gray-200 font-sans overflow-hidden flex flex-col">
+    // 最外层背景改为纯白
+    <div className="h-screen w-screen bg-white text-gray-800 font-sans overflow-hidden flex flex-col">
       <Toaster position="top-center" reverseOrder={false} />
 
-      {/* 主体工作区（占据除状态栏外的所有剩余空间） */}
       <div className="flex-1 overflow-hidden">
         <Allotment>
-          {/* 左侧侧边栏 */}
           <Allotment.Pane preferredSize={250} minSize={200} maxSize={400}>
             <Sidebar
               activeFile={activeFile}
@@ -481,10 +479,8 @@ function App() {
             />
           </Allotment.Pane>
 
-          {/* 右侧编辑区与终端 */}
           <Allotment.Pane>
             <Allotment vertical>
-              {/* 上半部：编辑器 */}
               <Allotment.Pane>
                 <div className="flex flex-col h-full w-full">
                   <Header
@@ -503,17 +499,16 @@ function App() {
                 </div>
               </Allotment.Pane>
 
-              {/* 下半部：终端（通过 visible 属性控制显示/隐藏） */}
               <Allotment.Pane preferredSize={250} minSize={100} visible={isTerminalOpen}>
-                <div className="h-full w-full flex flex-col bg-[#0d1117]">
-                  <div className="h-9 flex items-center px-4 bg-[#161b22] border-b border-t border-[#30363d] shrink-0 justify-between">
-                    <span className="text-[11px] font-mono text-gray-400 uppercase tracking-widest border-b-2 border-blue-500 h-full flex items-center">
+                <div className="h-full w-full flex flex-col bg-white">
+                  {/* 终端 Tab 栏变浅色 */}
+                  <div className="h-9 flex items-center px-4 bg-[#f8f9fa] border-t border-b border-gray-200 shrink-0 justify-between">
+                    <span className="text-[12px] font-mono text-gray-500 uppercase tracking-widest border-b-2 border-blue-500 h-full flex items-center pt-0.5">
                       Terminal
                     </span>
-                    {/* 面板内部也可以加一个关闭按钮 */}
                     <button
                       onClick={() => setIsTerminalOpen(false)}
-                      className="text-gray-500 hover:text-gray-300"
+                      className="text-gray-400 hover:text-gray-700 transition-colors"
                     >
                       ×
                     </button>
@@ -528,18 +523,18 @@ function App() {
         </Allotment>
       </div>
 
-      {/* --- 点睛之笔：底部状态栏 Status Bar --- */}
-      <div className="h-6 bg-blue-600 text-white text-xs flex items-center px-4 justify-between shrink-0 font-medium tracking-wide shadow-[0_-2px_10px_rgba(37,99,235,0.2)]">
+      {/* --- 亮色极简状态栏 --- */}
+      <div className="h-6 bg-white border-t border-gray-200 text-gray-500 text-[11px] flex items-center px-4 justify-between shrink-0 font-medium">
         <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1.5 hover:bg-blue-700 px-1 py-0.5 rounded cursor-pointer transition-colors">
-            <span className="w-2 h-2 rounded-full bg-green-300 animate-pulse"></span>
+          <span className="flex items-center gap-1.5 hover:bg-gray-100 px-1.5 py-0.5 rounded cursor-pointer transition-colors">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             已连接房间: {roomId}
           </span>
         </div>
-        <div className="flex items-center gap-4 text-blue-100">
-          <span className="hover:bg-blue-700 px-1 py-0.5 rounded cursor-pointer">UTF-8</span>
-          <span className="hover:bg-blue-700 px-1 py-0.5 rounded cursor-pointer">JavaScript</span>
-          <span className="hover:bg-blue-700 px-1 py-0.5 rounded cursor-pointer">Prettier</span>
+        <div className="flex items-center gap-4 text-gray-400">
+          <span className="hover:bg-gray-100 hover:text-gray-600 px-1.5 py-0.5 rounded cursor-pointer transition-colors">UTF-8</span>
+          <span className="hover:bg-gray-100 hover:text-gray-600 px-1.5 py-0.5 rounded cursor-pointer transition-colors">JavaScript</span>
+          <span className="hover:bg-gray-100 hover:text-gray-600 px-1.5 py-0.5 rounded cursor-pointer transition-colors">Prettier</span>
         </div>
       </div>
 

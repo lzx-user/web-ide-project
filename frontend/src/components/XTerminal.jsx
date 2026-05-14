@@ -17,15 +17,30 @@ export default function XTerminal({ currentSocket }) {
       termRef.current.clear();
     }
   };
+
   // 1. 负责初始化终端 UI (只在组件挂载时执行一次)
   useEffect(() => {
     if (!currentSocket || !terminalRef.current) return;
 
     // 创建终端实例
     const term = new Terminal({
-      cursorBlink: true,
-      theme: { background: '#1e1e1e' }, // 可以自定义一些漂亮的外观
-      fontFamily: 'Consolas, "Courier New", monospace',
+      // 配置 xterm 的亮色主题
+      theme: {
+        background: '#ffffff',
+        foreground: '#333333',
+        cursor: '#333333',
+        selectionBackground: '#bfdbfe', // tailwind blue-200
+        black: '#000000',
+        red: '#e11d48',
+        green: '#16a34a',
+        yellow: '#ca8a04',
+        blue: '#2563eb',
+        magenta: '#c026d3',
+        cyan: '#0891b2',
+        white: '#ffffff',
+      },
+      fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
+      fontSize: 13,
     });
 
     // 加入自适应插件
@@ -89,17 +104,15 @@ export default function XTerminal({ currentSocket }) {
   // 4. 渲染带悬浮按钮的 UI
   return (
     // 父容器：必须加上 relative (相对定位)，这样里面的按钮才能以它为边界进行悬浮
-    <div className="relative h-full w-full bg-[#0d1117] border-t border-[#30363d]">
-      {/* 悬浮清屏按钮：加上精美的磨砂感卡片背景 */}
+    <div className="relative h-full w-full bg-white">
       <button
         onClick={handleClear}
-        className="absolute top-3 right-6 z-10 p-1.5 rounded-md bg-[#161b22] border border-[#30363d] text-gray-500 hover:text-gray-200 hover:bg-[#2a2d2e] transition-all shadow-md"
+        className="absolute top-3 right-6 z-10 p-1.5 rounded-md bg-white border border-gray-200 text-gray-500 hover:text-gray-800 hover:bg-gray-50 transition-all shadow-sm"
         title="清空终端"
       >
         <Eraser size={16} />
       </button>
-
-      <div ref={terminalRef} className="h-full w-full p-2 overflow-hidden"></div>
+      <div ref={terminalRef} className="h-full w-full p-2 pl-4 overflow-hidden"></div>
     </div>
   );
 }

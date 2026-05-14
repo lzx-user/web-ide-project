@@ -22,77 +22,64 @@ export default function Header({
   const toggleTerminal = useIDEStore((state) => state.toggleTerminal);
 
   return (
-    // 使用 #161b22 提升层级，边框改为低对比度的 #30363d
-    <div className="h-12 bg-[#161b22] border-b border-[#30363d] flex items-center justify-between px-6 shrink-0">
+    // 背景纯白，边框极浅
+    <div className="h-12 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0">
 
-      {/* 左侧区域：项目与文件路径面包屑 */}
       <div className="flex items-center gap-3">
-        {/* --- 新增：终端控制按钮 --- */}
+        <div className="bg-blue-50 p-1.5 rounded-md text-blue-600">
+          <Code2 size={18} />
+        </div>
+        <span className="font-semibold text-gray-400 flex items-center gap-2 text-sm">
+          Web IDE <span className="text-gray-300">/</span>
+          <span className="text-gray-800">{activeFile}</span>
+        </span>
+      </div>
+
+      <div className="flex items-center gap-2">
         <button
           onClick={toggleTerminal}
           className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-all ${isTerminalOpen
-            ? 'text-blue-400 bg-blue-500/10 border border-blue-500/20' // 打开时的激活状态
-            : 'text-gray-400 hover:text-gray-200 hover:bg-[#2a2d2e] border border-transparent' // 关闭时的闲置状态
+              ? 'text-blue-700 bg-blue-50 border border-blue-200'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100 border border-transparent'
             }`}
-          title="切换终端面板"
         >
           <Terminal size={16} />
           终端
         </button>
 
-        {/* 竖向分割线 */}
-        <div className="w-px h-4 bg-[#30363d] mx-1"></div>
+        <div className="w-px h-4 bg-gray-200 mx-2"></div>
 
-        {/* 项目 Logo 占位 */}
-        <div className="bg-blue-500/10 p-1.5 rounded-md text-blue-400">
-          <Code2 size={18} />
-        </div>
-        <span className="font-semibold text-gray-400 flex items-center gap-2 text-sm">
-          Web IDE <span className="text-gray-600">/</span>
-          <span className="text-gray-200">{activeFile}</span>
-        </span>
-      </div>
-
-      {/* 右侧区域：核心操作按钮组 */}
-      <div className="flex items-center gap-3">
-        {/* 保存按钮 */}
         <button
           onClick={onSave}
-          disabled={isSaving || isRunning} // 如果正在运行或正在保存，则禁用
+          disabled={isSaving || isRunning}
           className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-all ${isSaving
-            ? 'text-gray-500 cursor-not-allowed'
-            : 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20'
+              ? 'text-gray-400 cursor-not-allowed'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
             }`}
         >
-          {/* 加入 animate-pulse 让 icon 在保存时有呼吸闪烁的效果 */}
-          <Save size={16} className={isSaving ? 'animate-pulse' : ''} />
-          {isSaving ? '保存中...' : '保存 (Save)'}
+          <Save size={16} className={isSaving ? 'animate-pulse text-blue-500' : ''} />
+          保存
         </button>
 
-        {/* 运行按钮 */}
         <button
           onClick={onRun}
-          disabled={isRunning || isSaving} // 交叉互锁：保存时也不能运行
+          disabled={isRunning || isSaving}
           className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-all ${isRunning
-            ? 'text-gray-500 cursor-not-allowed'
-            : 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20'
+              ? 'text-gray-400 cursor-not-allowed'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
             }`}
         >
-          <Play size={16} className={isRunning ? 'animate-pulse' : ''} />
-          {isRunning ? '运行中...' : '运行 (Run)'}
+          <Play size={16} className={isRunning ? 'animate-pulse text-emerald-500' : ''} />
+          运行
         </button>
 
-        {/* 竖向分割线 */}
-        <div className="w-px h-4 bg-gray-700 mx-1"></div>
+        <div className="w-px h-4 bg-gray-200 mx-2"></div>
 
-        {/* --- 退出按钮 --- */}
         <button
           onClick={onLeave}
-          className="flex items-center gap-2 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 px-3 py-1.5 rounded-md text-sm transition-all"
-          title="退出当前协作房间"
+          className="flex items-center gap-1.5 text-rose-500 hover:text-rose-600 hover:bg-rose-50 px-3 py-1.5 rounded-md text-sm transition-all"
         >
           <LogOut size={16} />
-          退出
         </button>
       </div>
     </div>
