@@ -9,9 +9,11 @@ class PtyManager {
 
     // 为每个房间创建一个 pty 进程
     const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
+    // 如果是 windows，传入 -NoLogo 参数隐藏版权信息
+    const args = os.platform() === 'win32' ? ['-NoLogo'] : [];
 
     // 1. 创建进程
-    this.ptyProcess = pty.spawn(shell, [], {
+    this.ptyProcess = pty.spawn(shell, args, {
       name: 'xterm-color',
       cols: 80,
       rows: 30,

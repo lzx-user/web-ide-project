@@ -12,7 +12,7 @@ import axios from 'axios';
 const request = axios.create({
   // 使用 Vite 特有的 import.meta.env 来读取环境变量
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api',
-  timeout: 5000,                        // 设置超时时间（5秒）
+  timeout: 5000, // 设置超时时间（5秒）
 });
 
 // 2. 请求拦截器：在真正发请求前“拦住”，塞点东西进去

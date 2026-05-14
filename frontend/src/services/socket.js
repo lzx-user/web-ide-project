@@ -22,14 +22,14 @@ export const connectSocket = (roomId, token) => {
   // 携带凭据和房间号，向后端 3000 端口发起长连接
   // 关键：必须指定后端的具体地址和端口
   socket = io('http://localhost:3000', {
-    auth: { token: token },  // 注入JWT凭据 (对应后端的 socket.handshake.auth)
-    query: { roomId: roomId },  // 注入房间信息 (对应后端的 socket.handshake.query)
+    auth: { token: token }, // 注入JWT凭据 (对应后端的 socket.handshake.auth)
+    query: { roomId: roomId }, // 注入房间信息 (对应后端的 socket.handshake.query)
   });
 
   // 3. 全局错误监听：捕获鉴权失败或连接异常
   socket.on('connect_error', (err) => {
     console.log('连接失败详情:', err.message);
-    alert("连接服务器失败，可能是登录已过期，请刷新页面重新进入。");
+    alert('连接服务器失败，可能是登录已过期，请刷新页面重新进入。');
   });
 
   return socket;
