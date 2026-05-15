@@ -6,7 +6,7 @@ import "allotment/dist/style.css";
 import toast, { Toaster } from 'react-hot-toast';
 import { STORAGE_KEYS } from './utils/constants';
 import useWorkspaceSocket from './hooks/useWorkspaceSocket';
-
+import { MonacoBinding } from 'y-monaco';
 // 组件与服务引入
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -56,12 +56,12 @@ function App() {
   const monacoRef = useRef(null); // 缓存 Monaco 实例，用来创建模型和其他编辑器相关的操作
   const fileCacheMap = useRef(new Map()); // 使用 useRef 缓存文件状态，格式 { [path]: { model, viewState } }
   const prevFileRef = useRef(null); // 记录上一个文件路径，便于切换时保存视图状态
-  const lastReceivedCodeRef = useRef({}); // 记录最后一次切换的文件路径，便于在收到后端代码包时正确更新当前文件的内容
   // 防断线重连覆盖锁
   const hasInitializedRef = useRef(false);
+  // 用来存放 Yjs 和 Monaco 之间 胶水 容器
+  const bindingRef = useRef(null);
 
   // 3. 局部 UI 状态
-  const [currentCode, setCurrentCode] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
 
@@ -73,27 +73,24 @@ function App() {
     localStorage.removeItem(STORAGE_KEYS.ACTIVE_FILE);
   };
 
+  // 接收 Yjs 实例，并且删掉 setCurrentCode 传参
+  const { ydoc, provider } = useWorkspaceSocket({
+    currentSocket,
+    roomId,
+    fileCacheMap,
+    hasInitializedRef,
+    setIsRunning,
+    setJoined,
+    clearPersistedState
+  });
+
   // 4. 核心业务处理器
 
-  // 捕获编辑器实例的回调函数 (传给 CodeEditor)
+  // 只负责存下实例，模型创建交给后面的文件切换逻辑去统一处理
   const handleEditorDidMount = (editor, monaco) => {
     editorRef.current = editor; // 将实例装进 ref 容器
     monacoRef.current = monaco; // 记录 monaco 核心对象，一会创建 Model 时会用到
-    console.log('Monaco Editor 挂载成功，实例已捕获！');
-
-    // 初始化：给默认打开的index.js 创建模型
-    const initialModel = monaco.editor.createModel(
-      currentCode || '', // 初始代码
-      'javascript', // 语言
-      monaco.Uri.parse(`file://index.js`) // 模拟文件路径
-    );
-    editor.setModel(initialModel); // 设置编辑器使用这个模型
-
-    // 存入文件缓存
-    fileCacheMap.current.set('index.js', {
-      model: initialModel,
-      viewState: null, // 初始没有视图状态
-    });
+    console.log('Monaco Editor 挂载成功，等待绑定文件...');
   };
 
   // 登录/加入房间流程
@@ -140,7 +137,7 @@ function App() {
 
   // 保存代码逻辑
   const handleSave = async () => {
-    // // 如果没有房间号，直接拦截，不让它往后端发瞎请求
+    // 如果没有房间号，直接拦截，不让它往后端发瞎请求
     if (!editorRef.current || isSaving || !roomId) {
       writeLog('error', '未获取到房间号，无法保存');
       return;
@@ -192,47 +189,6 @@ function App() {
     // 瞬间清空所有的 React 状态，内存缓存，并重新渲染 Login 页面
     window.location.href = '/';
   };
-
-  // 代码变更同步(含防抖)  降维打击闭包陷阱！
-  const debouncedEmitCode = useCallback(
-    debounce((code) => {
-      // 直接用 getState() 从金库拿绝对最新的实例和文件名！再也不用在依赖数组里猜了
-      const latestSocket = useIDEStore.getState().socket;
-      const latestFile = useIDEStore.getState().activeFile;
-
-      if (latestSocket) {
-        latestSocket.emit('codeChange', {
-          code: code,
-          filename: latestFile, // 告诉后端哪个文件变了
-        });
-      }
-    }, 500),
-    [] // 留空，保证防抖函数只创建一次，永不重新生成，彻底告别闭包陷阱
-  );
-
-  const handleCodeChange = (newCode) => {
-    // 同步更新状态
-    setCurrentCode(newCode);
-
-    const currentFile = useIDEStore.getState().activeFile; // 从金库里拿最新的当前文件
-
-    // 把每一笔敲下的代码实时拍进本地硬盘
-    localStorage.setItem(`draft-${roomId}-${currentFile}`, newCode);
-
-    // 如果当前代码等于刚刚 Socket 塞进来的代码，说明这是别人改的，不要再发回去了，直接返回
-    if (newCode === lastReceivedCodeRef.current[currentFile]) return;
-
-    // 如果是自己动手敲的，正常发给后端
-    debouncedEmitCode(newCode);
-  };
-
-  // 专门的卸载监听器
-  useEffect(() => {
-    // 组件卸载时，清空可能还处于倒计时中的防抖函数
-    return () => {
-      debouncedEmitCode.cancel();
-    };
-  }, [debouncedEmitCode]);
 
   // 用于彻底销毁底层编辑器模型
   useEffect(() => {
@@ -286,77 +242,73 @@ function App() {
     currentSocket,
     roomId,
     fileCacheMap,
-    lastReceivedCodeRef,
     hasInitializedRef,
-    setCurrentCode,
     setIsRunning,
     setJoined,
     clearPersistedState
   });
 
-  // 监听切换文件的动作
+  // 监听切换文件: 解绑旧文件，绑定新文化
   useEffect(() => {
     const editor = editorRef.current;
     const monaco = monacoRef.current;
 
-    // 读取离线草稿 辅助函数
-    const safeGetLocalStorage = (key) => {
-      try {
-        return localStorage.getItem(key);
-      } catch (error) {
-        console.warn('读取本地存储失败 (可能处于无痕模式):', error);
-        return null;
-      }
-    };
-    // 防御性编程：如果编辑器或 Monaco 实例尚未准备好，则不进行切换
-    if (!editor || !monaco) return;
+    // 如果底层的三大件（编辑器、Yjs 文档、WebSocket 通道）还没准备好，或者没有选中文件，就退出
+    if (!editor || !monaco || !activeFile || !ydoc || !provider) return;
 
-    const prevFile = prevFileRef.current;
     const targetFile = activeFile;
+    localStorage.setItem('ide_activeFile', targetFile);  // 每次文件真正切换时，存入本地记忆
 
-    // 每次文件真正切换时，存入本地记忆
-    localStorage.setItem('ide_activeFile', targetFile);
-
-    // 1. 整理旧文件现场：保存当前看的文件进度(viewState)
-    if (prevFile && fileCacheMap.current.has(prevFile)) {
-      const currentState = editor.saveViewState(); // 记录光标的位置'
-      const oldCache = fileCacheMap.current.get(prevFile);
-      oldCache.viewState = currentState; // 把viewState 夹进旧文件里
+    // 1. 整理旧现场：保存上一个文件的光标视图，并撕掉旧胶水
+    if (prevFileRef.current && fileCacheMap.current.has(prevFileRef.current)) {
+      fileCacheMap.current.get(prevFileRef.current).viewState = editor.saveViewState();
     }
 
-    // 2. 找新文件：去fileCacheMap中查找目标文件
+    // 撕掉旧文件的 Yjs 绑定，防止你在 index.js 里打字，却同步到了上一个文件里
+    if (bindingRef.current) {
+      bindingRef.current.destroy();
+      bindingRef.current = null;
+    }
+
+    // 2. 找新文件模型：如果没有，就用空字符串创建一个
     let targetCache = fileCacheMap.current.get(targetFile);
-
-
-    // 3. 如果没有就创建一个新的模型
     if (!targetCache) {
-      // 去缓存里拿离线代码，如果没有就给空字符串
-      const draftCode = safeGetLocalStorage(STORAGE_KEYS.getDraftKey(roomId, targetFile));
-      // (在真实项目中，这里可能需要去发 axios 请求获取文件内容，这里我们先用空字符串代替)
       const newModel = monaco.editor.createModel(
-        draftCode, // 离线代码
+        '', // 初始给空字符串即可，Yjs 连上后会自动把服务器的真实内容塞进来
         'javascript',
         monaco.Uri.parse(`file://${targetFile}`) // 根据targetFile的后缀判断是css还是json
       );
       targetCache = { model: newModel, viewState: null };
       fileCacheMap.current.set(targetFile, targetCache); // 存入缓存
-
-      // 同步到 React 状态，让界面刷新
-      setCurrentCode(draftCode);
-    } else {
-      // 如果文件已经打开过，也要同步一下状态
-      setCurrentCode(targetCache.model.getValue());
     }
 
-    // 4. 切换模型并恢复视图状态
+    // 3. 切换编辑器模型并恢复视图
     editor.setModel(targetCache.model);
     if (targetCache.viewState) {
       editor.restoreViewState(targetCache.viewState); // 恢复上次的光标位置
     }
 
-    // 5. 更新 prevFileRef 为当前文件，为下一次切换做准备
+    // 4. 建立全新绑定
+    // 根据当前文件名，向 Yjs 索要一个专属的共享文本类型。比如 ydoc.getText('index.js')
+    const ytext = ydoc.getText(targetFile);
+
+    // 给光标涂上颜色和名字（面试超级加分项：Awareness 协议）
+    provider.awareness.setLocalStateField('user', {
+      name: useIDEStore.getState().username || '前端开发工程师',
+      color: '#' + Math.floor(Math.random() * 16777215).toString(16)  // 随机生成一个十六进制颜色  
+    });
+
+    // 涂胶水：把当前文件的 Yjs 数据、Monaco 模型、以及光标同步绑定在一起
+    bindingRef.current = new MonacoBinding(
+      ytext,
+      targetCache.model,
+      new Set([editor]),
+      provider.awareness
+    );
+
     prevFileRef.current = targetFile;
-  }, [activeFile]); // 每当 activeFile 变化时触发切换逻辑
+
+  }, [activeFile, ydoc, provider]); // 依赖加入了 ydoc 和 provider，确保通道建立后自动触发绑定
 
   // 6. 渲染 UI
 
@@ -394,8 +346,6 @@ function App() {
                     onLeave={handleLeaveRoom}
                   />
                   <CodeEditor
-                    code={currentCode}
-                    setCode={handleCodeChange}
                     onMount={handleEditorDidMount}
                   />
                 </div>

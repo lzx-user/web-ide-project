@@ -24,23 +24,36 @@ export default function XTerminal({ currentSocket }) {
 
     // 创建终端实例
     const term = new Terminal({
-      // 配置 xterm 的亮色主题
+      // 深度定制的高对比度亮色主题 (类似 VS Code Light / GitHub Light)
       theme: {
-        background: '#ffffff',
-        foreground: '#333333',
-        cursor: '#333333',
-        selectionBackground: '#bfdbfe', // tailwind blue-200
-        black: '#000000',
-        red: '#e11d48',
-        green: '#16a34a',
-        yellow: '#ca8a04',
-        blue: '#2563eb',
-        magenta: '#c026d3',
-        cyan: '#0891b2',
-        white: '#ffffff',
+        background: '#ffffff',       // 纯白背景
+        foreground: '#383a42',       // 柔和的深灰主文字，避免纯黑的生硬感
+        cursor: '#005cc5',           // 光标改为清晰的亮蓝色，提升现代感
+        cursorAccent: '#ffffff',
+        selectionBackground: '#bfdbfe', // tailwind blue-200 选中色
+
+        // --- ANSI 色板全面调优（专为亮色背景设计，解决刺眼问题） ---
+        black: '#24292e',
+        brightBlack: '#6a737d',
+        red: '#d73a49',
+        brightRed: '#cb2431',
+        green: '#22863a',            // 压暗绿色，PowerShell 路径更清晰
+        brightGreen: '#28a745',
+        yellow: '#b58900',           // 【关键修复】深土黄色，完美解决原版黄色刺眼且看不清的问题
+        brightYellow: '#d18616',     // 稍亮的暗橙黄，保留警示感但不伤眼
+        blue: '#0366d6',
+        brightBlue: '#2188ff',
+        magenta: '#6f42c1',
+        brightMagenta: '#8a63d2',
+        cyan: '#005cc5',
+        brightCyan: '#032f62',
+        white: '#d1d5da',
+        brightWhite: '#fafbfc'
       },
       fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
-      fontSize: 13,
+      fontSize: 14,                  // 稍微调大1px，保护视力
+      fontWeight: '500',             // 【关键修复】增加字重，让细线条的彩色文字(尤其是黄色)在白底上更具实体感
+      cursorBlink: true,             // 开启光标闪烁，交互体验更原生
     });
 
     // 加入自适应插件

@@ -1,7 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import useIDEStore from "../store/useIDEStore";
 import { STORAGE_KEYS } from "../utils/constants";
-import { icons } from "lucide-react";
+// Yjs 核心三剑客
+import * as Y from 'yjs';
+import { WebsocketProvider } from 'y-websocket';
+import { MonacoBinding } from 'y-monaco';
+// 引入原生的 IndexedDB 离线持久化工具
+import { IndexeddbPersistence } from 'y-indexeddb';
 
 /**
  * 核心自定义 Hook：接管工作区所有的 WebSocket 通信与底层协同逻辑
@@ -15,22 +20,21 @@ export default function useWorkspaceSocket({
   currentSocket,  // 当前建立的 Socket 实例
   roomId,
   fileCacheMap,  // 跨组件透传的文件柜缓存(含monacoRef)
-  lastReceivedCodeRef,  // 防死循环锁：记录最后一次收到的后端代码
-  hasInitializedRef,  // 防重复执行锁：标记是否已接受过历史代码包
-  setCurrentCode,  // 触发 UI 渲染当前代码的方法
+  hasInitializedRef,  // 防重复初始化侧边栏
   setIsRunning,
   setJoined,
   clearPersistedState  // 持久化缓存清理函数
 }) {
-  // 1. 从 Zustand 全局状态金库中订阅所需的方法
   const addFileToFileList = useIDEStore((state) => state.addFileToFileList);
   const setFileList = useIDEStore((state) => state.setFileList);
   const setActiveFile = useIDEStore((state) => state.setActiveFile);
   const addLog = useIDEStore((state) => state.addLog);
+  const isJoined = useIDEStore((state) => state.isJoined);
 
-  // 2. 辅助函数：安全写入终端日志
-  // 为什么不直接在 handleOutput 里写？因为闭包会导致拿到旧的 activeFile。
-  // 每次调用 writeLog 时动态使用 getState() 保证获取绝对最新的全局状态。
+  // 使用 useRef 持久化保存 Yjs 相关的实例，防止重绘丢失
+  const ydocRef = useRef(null);
+  const providerRef = useRef(null);
+
   const writeLog = (type, text) => {
     const activeFile = useIDEStore.getState().activeFile;
     if (activeFile) {
@@ -38,9 +42,45 @@ export default function useWorkspaceSocket({
     }
   };
 
-  // 3. Socket 监听与卸载
+  // 1. Yjs数据面的初始化
   useEffect(() => {
-    // // 门控检查 (Guard Clause)：如果没有建立连接，直接跳出，防止空指针异常
+    // 只有在用户成功加入房间后，才启动数据同步隧道
+    if (!isJoined || !roomId) return;
+
+    // 1. 初始化本地微型数据库(每个房间一个 Doc)
+    const ydoc = new Y.Doc();
+    ydocRef.current = ydoc;
+
+    // 2. 注入离线：将当前房间的 ydoc 绑定到浏览器的本地数据库
+    // 只要有改动，它会自动默默写入硬盘；初始化时，它会自动从硬盘把历史拉出来
+    const indexeddbProvider = new IndexeddbPersistence(`room-${roomId}`, ydoc);
+
+    indexeddbProvider.on('synced', () => {
+      console.log('[Yjs] 📦 本地离线草稿加载完毕，且保留了完美的历史合并树');
+    });
+
+    // 3. 建立与后端 1234 端口的高速公路
+    // ws 协议，直接连我们的数据面
+    const provider = new WebsocketProvider(
+      'ws://localhost:1234',
+      roomId,
+      ydoc
+    );
+    providerRef.current = provider;
+
+    console.log('[Yjs] 🔗 数据面连接已建立，准备接管代码同步');
+
+    // 清理函数：离开房间时断开连接
+    return () => {
+      provider.destroy();
+      ydoc.destroy();
+      console.log('[Yjs] 🛑 数据面连接已销毁');
+    };
+  }, [roomId, isJoined]);
+
+  // 2. Socket.io 控制面的监听与卸载
+  useEffect(() => {
+    // 门控检查 (Guard Clause)：如果没有建立连接，直接跳出，防止空指针异常
     if (!currentSocket) return;
 
     // 终端执行相关事件
@@ -58,55 +98,11 @@ export default function useWorkspaceSocket({
       addFileToFileList(newFileObj);  // 广播新文件创建
     };
 
-    // 核心：处理用户首次进入房间/断线重连时，后端下发的全量历史代码包
+    // 不再用 socket.io 发送历史代码了 这个事件现在只负责初始化“左侧文件树”
     const handleInitCodePackage = (codePackage) => {
       // 防御性编程：如果是断线重连触发的，拒绝二次初始化，保护用户当前正在编辑的现场
       if (hasInitializedRef.current) return;
       hasInitializedRef.current = true;
-
-      console.log('📦 收到房间历史代码包:', codePackage);
-
-      // 这是一个空房间
-      if (Object.keys(codePackage).length == 0) {
-        setActiveFile('');
-        setFileList([]);
-        setCurrentCode('');
-        return;
-      }
-
-      // 房间内有文件。优先处理当前活动文件的视图展示
-      const targetFile = useIDEStore.getState().activeFile;
-      if (codePackage[targetFile] !== undefined) {
-        // 本地离线兜底策略：看看用户断网时有没有没来得及发出去的草稿
-        const draftCode = localStorage.getItem(STORAGE_KEYS.getDraftKey(roomId, targetFile));
-        setCurrentCode(draftCode !== null ? draftCode : codePackage[targetFile]);
-      }
-
-      // 批量创建底层 Monaco 模型 (Model)
-      // 使用 optional chaining (?.) 安全获取深层嵌套的 monaco 实例
-      const currentMonaco = fileCacheMap.current?.monacoRef?.current;
-      if (currentMonaco) {
-        Object.entries(codePackage).forEach(([filename, code]) => {
-          // 登录历史底稿，防止 handleCodeChange 产生错误的回声
-          lastReceivedCodeRef.current[filename] = code;
-          let cache = fileCacheMap.current.get(filename);
-
-          if (cache) {
-            // 已存在模型：静默更新内容，防止光标乱跳
-            if (cache.model.getValue() !== code) cache.model.setValue(code);
-          } else {
-            // 未存在模型：优先取本地草稿，次取服务器历史，创建新模型
-            const draftCode = localStorage.getItem(STORAGE_KEYS.getDraftKey(roomId, filename));
-            const finalCode = draftCode !== null ? draftCode : code;
-            const newModel = currentMonaco.editor.createModel(
-              finalCode,
-              'javascript',
-              currentMonaco.Uri.parse(`file://${filename}`)
-            );
-            fileCacheMap.current.set(filename, { model: newModel, viewState: null });
-          }
-        });
-      }
 
       // 初始化左侧文化资源管理器
       const initFileList = Object.keys(codePackage).map((filename, index) => ({
@@ -116,21 +112,10 @@ export default function useWorkspaceSocket({
         icon: '📄',
       }));
       setFileList(initFileList);
-    };
 
-    // 核心：处理协同代码的高频注入
-    const handleCodeChangeSocket = (payload) => {
-      const { code, filename } = payload;
-      // 类型断言防崩：防止网络包损坏或后端传错导致前端白屏
-      if (typeof code !== 'string') return;
-
-      // 更新最后收到的代码指纹
-      lastReceivedCodeRef.current[filename] = code;
-      const targetCache = fileCacheMap.current.get(filename);
-
-      // 静默更新底层数据：绝对不能触发 setCurrentCode 引发 React 层面重绘
-      if (targetCache && targetCache.model.getValue() !== code) {
-        targetCache.model.setValue(code);
+      // 如果房间里有文件 默认选中第一个
+      if (initFileList.length > 0 && !useIDEStore.getState().activeFile) {
+        setActiveFile(initFileList[0].name);
       }
     };
 
@@ -141,7 +126,6 @@ export default function useWorkspaceSocket({
     currentSocket.on('executionStarted', handleExecutionStarted);
     currentSocket.on('executionFinished', handleFinish);
     currentSocket.on('initCodePackage', handleInitCodePackage);
-    currentSocket.on('codeChange', handleCodeChangeSocket);
 
     // 异常处理
     currentSocket.on('connect_error', (err) => {
@@ -160,8 +144,13 @@ export default function useWorkspaceSocket({
       currentSocket.off('executionStarted', handleExecutionStarted);
       currentSocket.off('fileCreated', handleFileCreated);
       currentSocket.off('initCodePackage', handleInitCodePackage);
-      currentSocket.off('codeChange', handleCodeChangeSocket);
       currentSocket.off('connect_error');
     };
   }, [currentSocket, roomId]);  // 依赖数组：只有当 socket 实例或房间号发生本质变化时，才重新绑定
+
+  // 把 Yjs 的实例暴露出去，给外面的 App.jsx 用
+  return {
+    ydoc: ydocRef.current,
+    provider: providerRef.current
+  }
 }

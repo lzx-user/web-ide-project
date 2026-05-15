@@ -12,11 +12,15 @@ const useIDEStore = create((set, get) => ({
   terminalLogsMap: {},  // 防止第一次打印日志时解构出 undefined 导致白屏
   setFileList: (newList) => set({ fileList: newList }), // 全量覆盖列表的方法 (用于初始化历史代码包)
   // 追加单个文件的方法 (Zustand 的优雅写法)
-  // 相比于在组件里去拼数组，把逻辑封装在 Store 里更符合外企规范
+  // 在组件里去拼数组，把逻辑封装在 Store 里更符合规范
   addFileToFileList: (newFileObj) =>
-    set((state) => ({
-      fileList: [...state.fileList, newFileObj],
-    })),
+    set((state) => {
+      // 如果列表里已经有同名文件了，直接拦截，防止重复渲染
+      if (state.fileList.som(file => file.name === newFileObj.name)) {
+        return state;
+      }
+      return { fileList: [...state.fileList, newFileObj] };
+    }),
 
   isTerminalOpen: false, // 终端默认关闭
   toggleTerminal: () => set((state) => ({ isTerminalOpen: !state.isTerminalOpen })),

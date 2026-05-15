@@ -10,10 +10,12 @@ const { spawn } = require('child_process');
 const roomRouter = require('./src/routes/room');
 const codeRouter = require('./src/routes/code');
 const PtyManager = require('./src/pty/PtyManager');
+// 引入 ws 模块
+const WebSocket = require('ws');
+const { setupWSConnection } = require('y-websocket/bin/utils');
 // 1. 引入统一配置文件
 const config = require('./config');
 const { randomUUID } = require('crypto');
-
 /**
  * Web IDE 后端核心服务
  * 思路：
@@ -74,44 +76,21 @@ io.on('connection', (socket) => {
   socket.join(roomId);  // 自动加入 JWT 中指定的房间
   console.log(`[房间 ${roomId}] 用户 ${username} 已连接`);
 
-  // 新用户历史代码同步机制
-  // 思路：当新用户加入房间时，服务器从临时目录读取该房间的最新代码（如果有），并通过 socket.emit 发送给这个新用户。
-  // 1. 准备一个空包裹，等会儿用来装我们找到的代码
-  // 最终长这样：{ 'index.js': 'console.log(1)', 'style.css': 'body{}' }
+  // 初始化文件树结构(只发文件名，不发代码内容，内容由 Yjs 负责)
   const codePackage = {};
   try {
-    // 同步读取(Sync)
-    // 2. 读取临时目录下所有文件，找到属于这个房间的最新代码
     const allFiles = fs.readdirSync(tempDir);
-    // 3. 遍历这个数组，挨个检查文件
     allFiles.forEach(fileName => {
-      // 字符串过滤：通过 startsWith 和 replace 这两个原生的字符串方法
-      // 4. 判断条件：这个文件是属于当前房间的吗？ 利用startsWith方法，房间ID是文件名前缀
       if (fileName.startsWith(`${roomId}_`)) {
-        // 5. 如果是，就读取这个文件的内容，放到 codePackage 里
-        const filePath = path.join(tempDir, fileName);
-        // 6. 用fs.readFileSync同步读取文件内容
-        const codeContent = fs.readFileSync(filePath, 'utf8');
-        // 7. 从文件名中提取出原始文件名（去掉 roomId_ 前缀）把前缀替换成空字符串即可
         const realFileName = fileName.replace(`${roomId}_`, '');
-        // 8. 把装好的代码的文件，放进我们的包裹里
-        codePackage[realFileName] = codeContent;
+        // 只传一个空字符串占位，因为前端现在只取 Object.keys(codePackage) 来渲染侧边栏
+        codePackage[realFileName] = '';
       }
     });
-    // 9. 无论包裹里有没有东西，都发给前端，让前端知道这是不是空房间！
-    // 10. 如果有，就通过 socket.emit 发送给这个新用户，事件名叫 'initCodePackage' 
-    // 精准投递：socket.emit 代表只给触发这个动作的本人发消息。
     socket.emit('initCodePackage', codePackage);
-    // 打印日志，确认同步成功
-    console.log(`[房间 ${roomId}] 已同步历史代码给用户 ${username} 发送了 ${Object.keys(codePackage).length} 个历史文件`);
   } catch (err) {
-    console.error('读取代码文件失败:', err);
+    console.log('读取目录文件失败:', err);
   }
-
-  // 监听：代码变更同步 (排除发送者)
-  socket.on('codeChange', (newCode) => {
-    io.to(roomId).emit('codeChange', newCode);
-  })
 
   // 新建文件
   socket.on('createFile', async (data) => {
@@ -209,10 +188,24 @@ io.on('connection', (socket) => {
   })
 })
 
+// Yjs 数据面 (Data Plane) - 纯粹的 WebSocket 隧道
+const YJS_PORT = 1234;  // 专门为代码同步开辟的独立端口
+const wss = new WebSocket.Server({ port: YJS_PORT });
+wss.on('connection', (ws, req) => {
+  // 可以从 req.url 中提取房间号，比如前端连 ws://localhost:1234/room-111
+  const docName = req.url.slice(1).split('?')[0] || 'default-room';
+  console.log(`[数据面] ⚡ 建立 CRDT 同步通道，目标文档: ${docName}`);
+
+  // 把原生的 ws 连接直接丢给 Yjs 的底层工具函数
+  // 光标同步，代码冲突合并，离线重连 全包了
+  setupWSConnection(ws, req, { docName });
+})
+
 // 5. 启动监听
 server.listen(config.server.port, () => {
   console.log(`
-  🚀 Server Running: http://${config.server.host}:${config.server.port}
+  🚀 Server Running: http://${config.server.host}:${config.server.port}  
+  📡 数据面 (Yjs CRDT):  ws://${config.server.host}:${YJS_PORT}
   🔧 Mode: ${config.env.current}
   `);
 });
