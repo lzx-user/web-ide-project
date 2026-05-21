@@ -13,9 +13,11 @@ import Header from './components/Header';
 import CodeEditor from './components/CodeEditor';
 import XTerminal from './components/XTerminal';
 import Login from './components/Login';
+import OutputPanel from './components/OutputPanel';
 import { socket, connectSocket } from './services/socket';
 import request from './services/request'; // 统一请求封装
 import { Editor } from '@monaco-editor/react';
+import { Code2 } from 'lucide-react';
 // 引入全新状态引擎
 import useIDEStore from './store/useIDEStore';
 
@@ -51,6 +53,9 @@ function App() {
   const isTerminalOpen = useIDEStore((state) => state.isTerminalOpen);
   const setIsTerminalOpen = useIDEStore((state) => state.setIsTerminalOpen);
 
+  const bottomTab = useIDEStore((state) => state.bottomTab);
+  const setBottomTab = useIDEStore((state) => state.setBottomTab);
+
   // 2. 底层实例缓存(依然需要保留)
   const editorRef = useRef(null); //  用于存放编辑器的 DOM 容器，确保实例捕获与 UI 渲染解耦，避免不必要的 re-render 导致实例丢失。
   const monacoRef = useRef(null); // 缓存 Monaco 实例，用来创建模型和其他编辑器相关的操作
@@ -73,6 +78,7 @@ function App() {
     localStorage.removeItem(STORAGE_KEYS.ACTIVE_FILE);
   };
 
+  fileCacheMap.current.monacoRef = monacoRef;
   // 接收 Yjs 实例，并且删掉 setCurrentCode 传参
   const { ydoc, provider } = useWorkspaceSocket({
     currentSocket,
@@ -128,10 +134,68 @@ function App() {
   };
 
   // 创建文件逻辑 只管emit事件，具体文件创建和同步逻辑由后端处理
-  const handleCreateFile = (filename) => {
+  const handleCreateFile = ({ path, isFolder }) => {
     if (currentSocket) {
-      // 像后端发送创建请求
-      currentSocket.emit('createFile', { roomId, filename });
+      // 像后端发送创建请求 第 3 个参数传入一个回调函数，用来接收后端的点对点确认
+      currentSocket.emit('createFile', { roomId, filename: path, isFolder }, (response) => {
+        if (!response) return;
+
+        // 建立完整响应生命周期分支
+        if (response.success) {
+          // 创建成功，但路径被系统自动净化过
+          if (response.isSanitized) {
+            toast(
+              (t) => (
+                <div className="text-xs text-gray-600">
+                  <p className="font-bold text-amber-500 mb-0.5">⚠️ 系统已自动规范路径</p>
+                  <p>由于检测到不规范输入，已将：</p>
+                  <code className="bg-gray-100 px-1 py-0.5 rounded text-rose-500 line-through block my-0.5 truncate">{response.original}</code>
+                  <p>自动修正为标准路径：</p>
+                  <code className="bg-gray-50 px-1 py-0.5 rounded text-emerald-600 block my-0.5 font-medium truncate">{response.cleaned}</code>
+                </div>
+              ),
+              {
+                duration: 5000,  // 停留5秒，给用户足够的阅读时间
+                icon: '⚙️',
+                style: {
+                  border: '1px solid #f59e0b',
+                  padding: '12px',
+                  background: '#fff',
+                },
+              }
+            );
+          }
+        } else {
+          // 创建失败（如黑客越界攻击、重名、非法路径），弹出醒目的红色错误提示！
+          toast.error(`创建文件失败: ${response.msg}`, {
+            id: 'create-file-fail',  // 设置唯一id，防止连击时弹出重叠的堆叠层
+            duration: 4000,
+            style: {
+              border: '1px solid #f43f5e',
+              padding: '10px',
+              color: '#9f1239',
+              fontWeight: '500',
+            }
+          });
+        }
+      });
+    }
+  };
+
+  // 删除文件逻辑
+  const handleDeleteFile = (filename) => {
+    // 拦截确认，防止手滑误删
+    if (window.confirm(`确定要删除 ${filename}`)) {
+      if (currentSocket) {
+        currentSocket.emit('deleteFile', { roomId, filename });
+      }
+
+      // 如果被删的文件刚好是当前正在编辑的文件，必须清空编辑器
+      if (activeFile === filename) {
+        setActiveFile('');
+        // 同步清除本地记忆，否则刷新会炸尸
+        localStorage.removeItem(STORAGE_KEYS.ACTIVE_FILE);
+      }
     }
   };
 
@@ -234,27 +298,23 @@ function App() {
     }
   }, []);
 
-  /// 5. 挂载自定义 Hook：接管所有 Socket 核心业务通信
-  // 为了让 Hook 里的 monaco 实例获取正确，将 monacoRef 挂载到 fileCacheMap 上传递
-  fileCacheMap.current.monacoRef = monacoRef;
-
-  useWorkspaceSocket({
-    currentSocket,
-    roomId,
-    fileCacheMap,
-    hasInitializedRef,
-    setIsRunning,
-    setJoined,
-    clearPersistedState
-  });
-
-  // 监听切换文件: 解绑旧文件，绑定新文化
+  // 监听切换文件: 解绑旧文件，绑定新文件
   useEffect(() => {
     const editor = editorRef.current;
     const monaco = monacoRef.current;
 
-    // 如果底层的三大件（编辑器、Yjs 文档、WebSocket 通道）还没准备好，或者没有选中文件，就退出
-    if (!editor || !monaco || !activeFile || !ydoc || !provider) return;
+    // 底层核心实例还没准备好时，直接退出 (注意：这里把 !activeFile 删掉了)
+    if (!editor || !monaco || !ydoc || !provider) return;
+
+    // 如果当前没有选中任何文件（例如刚删除了当前文件）
+    if (!activeFile) {
+      // 撕掉可能存在的旧协同绑定
+      if (bindingRef.current) {
+        bindingRef.current.destroy();
+        bindingRef.current = null;
+      }
+      return; // 直接终止，不再往下走
+    }
 
     const targetFile = activeFile;
     localStorage.setItem('ide_activeFile', targetFile);  // 每次文件真正切换时，存入本地记忆
@@ -330,6 +390,7 @@ function App() {
               fileList={fileList}
               setFileList={setFileList}
               handleCreateFile={handleCreateFile}
+              handleDeleteFile={handleDeleteFile}
             />
           </Allotment.Pane>
 
@@ -345,19 +406,51 @@ function App() {
                     onRun={handleRun}
                     onLeave={handleLeaveRoom}
                   />
-                  <CodeEditor
-                    onMount={handleEditorDidMount}
-                  />
+                  {/* 如果有 activeFile，才渲染真实编辑器；否则，渲染一个漂亮的空状态占位图 */}
+                  {activeFile ? (
+                    <CodeEditor onMount={handleEditorDidMount} />
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
+                      <div className="w-24 h-24 mb-4 opacity-20">
+                        {/* 画一个巨大的代码图标作为水印 */}
+                        <Code2 size={96} />
+                      </div>
+                      <p className="text-lg font-medium tracking-widest text-gray-500">Web IDE 协作空间</p>
+                      <p className="text-sm mt-2">请在左侧资源管理器中选择或新建文件</p>
+                    </div>
+                  )}
                 </div>
               </Allotment.Pane>
 
               <Allotment.Pane preferredSize={250} minSize={100} visible={isTerminalOpen}>
                 <div className="h-full w-full flex flex-col bg-white">
                   {/* 终端 Tab 栏变浅色 */}
-                  <div className="h-9 flex items-center px-4 bg-[#f8f9fa] border-t border-b border-gray-200 shrink-0 justify-between">
-                    <span className="text-[12px] font-mono text-gray-500 uppercase tracking-widest border-b-2 border-blue-500 h-full flex items-center pt-0.5">
-                      Terminal
-                    </span>
+                  <div className="h-9 flex items-center bg-[#f8f9fa] border-t border-b border-gray-200 shrink-0 justify-between px-2">
+                    <div className="flex h-full">
+                      {/* 终端 Tab */}
+                      <button
+                        onClick={() => setBottomTab('terminal')}
+                        className={`px-4 text-[12px] font-mono uppercase tracking-widest h-full flex items-center transition-colors ${bottomTab === 'terminal'
+                          ? 'text-gray-800 border-b-2 border-blue-500 bg-white'
+                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 border-b-2 border-transparent'
+                          }`}
+                      >
+                        Terminal
+                      </button>
+
+                      {/* 输出 Tab */}
+                      <button
+                        onClick={() => setBottomTab('output')}
+                        className={`px-4 text-[12px] font-mono uppercase tracking-widest h-full flex items-center transition-colors ${bottomTab === 'output'
+                          ? 'text-gray-800 border-b-2 border-blue-500 bg-white'
+                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 border-b-2 border-transparent'
+                          }`}
+                      >
+                        Output
+                      </button>
+                    </div>
+
+                    {/* 关闭按钮 */}
                     <button
                       onClick={() => setIsTerminalOpen(false)}
                       className="text-gray-400 hover:text-gray-700 transition-colors"
@@ -365,8 +458,26 @@ function App() {
                       ×
                     </button>
                   </div>
+                  {/* 替换成业界标准的【多重挂载 + CSS 显隐】架构： */}
+                  {/* 将原来的那块替换为下面这段： */}
                   <div className="flex-1 overflow-hidden relative">
-                    {currentSocket && <XTerminal currentSocket={currentSocket} />}
+
+                    {/* 终端面板：绝对定位占满，选中时透明度为1，未选中时透明度为0且禁止点击 */}
+                    <div
+                      className={`absolute inset-0 transition-opacity duration-200 ${bottomTab === 'terminal' ? 'z-10 opacity-100' : 'z-0 opacity-0 pointer-events-none'
+                        }`}
+                    >
+                      {currentSocket && <XTerminal currentSocket={currentSocket} />}
+                    </div>
+
+                    {/* 输出面板：绝对定位占满 */}
+                    <div
+                      className={`absolute inset-0 bg-white transition-opacity duration-200 ${bottomTab === 'output' ? 'z-10 opacity-100' : 'z-0 opacity-0 pointer-events-none'
+                        }`}
+                    >
+                      <OutputPanel />
+                    </div>
+
                   </div>
                 </div>
               </Allotment.Pane>

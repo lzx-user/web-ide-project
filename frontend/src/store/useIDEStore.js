@@ -1,3 +1,4 @@
+import { filter } from 'lodash';
 import { create } from 'zustand';
 
 // 创建一个全局的 Store
@@ -7,20 +8,25 @@ const useIDEStore = create((set, get) => ({
   roomId: '', // 房间号
   socket: null, // WebSocket 实例
   activeFile: '', // 当前选中的文件
-  fileList: [], // 文件列表
-  // 初始化日志字典，防止 addLog 时触发 undefined 报错
+  fileList: [], // 存放后端发来的整棵树
   terminalLogsMap: {},  // 防止第一次打印日志时解构出 undefined 导致白屏
-  setFileList: (newList) => set({ fileList: newList }), // 全量覆盖列表的方法 (用于初始化历史代码包)
-  // 追加单个文件的方法 (Zustand 的优雅写法)
-  // 在组件里去拼数组，把逻辑封装在 Store 里更符合规范
-  addFileToFileList: (newFileObj) =>
-    set((state) => {
-      // 如果列表里已经有同名文件了，直接拦截，防止重复渲染
-      if (state.fileList.som(file => file.name === newFileObj.name)) {
-        return state;
-      }
-      return { fileList: [...state.fileList, newFileObj] };
-    }),
+
+  // 底部面板状态管理
+  // 1. 记录当前处于哪个Tab, 默认显示 terminal
+  bottomTab: 'terminal',  // 可选值: 'terminal' | 'output'
+  setBottomTab: (tab) => set({ bottomTab: tab }),
+
+  // 2. 专门存储代码运行结果的数组（不再跟终端日志混在一起）
+  outputLogs: [],
+  // 追加运行结果
+  addOutputLog: (type, text) =>
+    set((state) => ({
+      outputLogs: [...state.outputLogs, { id: Date.now(), type, text }],
+    })),
+  // 每次重新运行前，清空上一次的结果
+  clearOutputLogs: () => set({ outputLogs: [] }),
+
+  setFileList: (newTree) => set({ fileList: newTree }), // 只保留这一个全量覆盖的方法
 
   isTerminalOpen: false, // 终端默认关闭
   toggleTerminal: () => set((state) => ({ isTerminalOpen: !state.isTerminalOpen })),

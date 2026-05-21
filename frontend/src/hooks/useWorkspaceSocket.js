@@ -25,7 +25,6 @@ export default function useWorkspaceSocket({
   setJoined,
   clearPersistedState  // 持久化缓存清理函数
 }) {
-  const addFileToFileList = useIDEStore((state) => state.addFileToFileList);
   const setFileList = useIDEStore((state) => state.setFileList);
   const setActiveFile = useIDEStore((state) => state.setActiveFile);
   const addLog = useIDEStore((state) => state.addLog);
@@ -62,7 +61,7 @@ export default function useWorkspaceSocket({
     // 3. 建立与后端 1234 端口的高速公路
     // ws 协议，直接连我们的数据面
     const provider = new WebsocketProvider(
-      'ws://localhost:1234',
+      import.meta.env.VITE_YJS_URL,
       roomId,
       ydoc
     );
@@ -86,45 +85,49 @@ export default function useWorkspaceSocket({
     // 终端执行相关事件
     const handleOutput = (data) => writeLog('info', data);
     const handleError = (data) => writeLog('error', data);
-    const handleFinish = (exitCode) => writeLog('info', `\n[进程执行完毕，退出码: ${exitCode}]`);
-
-    const handleExecutionStarted = () => {
-      setIsRunning(true);
-      writeLog('info', '正在运行代码...');
-    }
-
-    // 文件树与协同相关事件
-    const handleFileCreated = (newFileObj) => {
-      addFileToFileList(newFileObj);  // 广播新文件创建
+    // 当进程执行完毕，不仅要打日志，还要把运行状态解锁，允许用户再次点击运行
+    const handleFinish = (exitCode) => {
+      writeLog('info', `\n[进程执行完毕，退出码: ${exitCode}]`);
+      setIsRunning(false);
     };
 
-    // 不再用 socket.io 发送历史代码了 这个事件现在只负责初始化“左侧文件树”
-    const handleInitCodePackage = (codePackage) => {
-      // 防御性编程：如果是断线重连触发的，拒绝二次初始化，保护用户当前正在编辑的现场
-      if (hasInitializedRef.current) return;
-      hasInitializedRef.current = true;
+    // 点击运行时，自动切到 output 面板并清空旧日志 
+    const handleExecutionStarted = () => {
+      setIsRunning(true);
+      // 直接调用 Store 的方法
+      useIDEStore.getState().setBottomTab('output');
+      useIDEStore.getState().clearOutputLogs();
+    };
 
-      // 初始化左侧文化资源管理器
-      const initFileList = Object.keys(codePackage).map((filename, index) => ({
-        id: index,
-        name: filename,
-        type: 'file',
-        icon: '📄',
-      }));
-      setFileList(initFileList);
+    // 新增针对独立执行通道的事件处理
+    const handleCodeOutput = (data) => {
+      useIDEStore.getState().addOutputLog('info', data);
+    };
+    const handleCodeError = (data) => {
+      useIDEStore.getState().addOutputLog('error', data);
+    };
 
-      // 如果房间里有文件 默认选中第一个
-      if (initFileList.length > 0 && !useIDEStore.getState().activeFile) {
-        setActiveFile(initFileList[0].name);
+    // 现在这个方法全权接管了文件的 初始化、新建、删除 的 UI 更新
+    const handleInitCodePackage = (codeTree) => {
+      // 1. 直接把后端发来的树存进 Zustand
+      setFileList(codeTree);
+
+      // 2. 如果这是第一次进房间，而且树里有文件，且当前没选中文件，自动选中第一个
+      if (codeTree.length > 0 && !useIDEStore.getState().activeFile) {
+        // 为了安全起见，我们默认选中第一层的第一个文件（如果是文件夹，则需要更复杂的寻址，这里简写）
+        const firstNode = codeTree[0];
+        setActiveFile(firstNode.path);
       }
     };
 
     // --- 事件绑定 ---
-    currentSocket.on('fileCreated', handleFileCreated);
     currentSocket.on('terminalOutput', handleOutput);
     currentSocket.on('terminalError', handleError);
+    currentSocket.on('codeOutput', handleCodeOutput);
+    currentSocket.on('codeError', handleCodeError);
     currentSocket.on('executionStarted', handleExecutionStarted);
     currentSocket.on('executionFinished', handleFinish);
+    // 监听树更新广播
     currentSocket.on('initCodePackage', handleInitCodePackage);
 
     // 异常处理
@@ -140,9 +143,10 @@ export default function useWorkspaceSocket({
     return () => {
       currentSocket.off('terminalOutput', handleOutput);
       currentSocket.off('terminalError', handleError);
+      currentSocket.off('codeOutput', handleCodeOutput);
+      currentSocket.off('codeError', handleCodeError);
       currentSocket.off('executionFinished', handleFinish);
       currentSocket.off('executionStarted', handleExecutionStarted);
-      currentSocket.off('fileCreated', handleFileCreated);
       currentSocket.off('initCodePackage', handleInitCodePackage);
       currentSocket.off('connect_error');
     };

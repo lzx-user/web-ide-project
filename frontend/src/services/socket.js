@@ -20,10 +20,10 @@ export let socket = null;
 // 2. 用户在大厅输入完毕并拿到Token 后，再调用这个函数去连接
 export const connectSocket = (roomId, token) => {
   // 携带凭据和房间号，向后端 3000 端口发起长连接
-  // 关键：必须指定后端的具体地址和端口
-  socket = io('http://localhost:3000', {
-    auth: { token: token }, // 注入JWT凭据 (对应后端的 socket.handshake.auth)
-    query: { roomId: roomId }, // 注入房间信息 (对应后端的 socket.handshake.query)
+  // 读取环境变量
+  socket = io(import.meta.env.VITE_WS_URL, {
+    auth: { token: token },
+    query: { roomId: roomId },
   });
 
   // 3. 全局错误监听：捕获鉴权失败或连接异常
