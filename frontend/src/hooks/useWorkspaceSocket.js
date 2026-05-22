@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import useIDEStore from "../store/useIDEStore";
 import { STORAGE_KEYS } from "../utils/constants";
+import { io } from 'socket.io-client';
 // Yjs 核心三剑客
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
@@ -29,6 +30,8 @@ export default function useWorkspaceSocket({
   const setActiveFile = useIDEStore((state) => state.setActiveFile);
   const addLog = useIDEStore((state) => state.addLog);
   const isJoined = useIDEStore((state) => state.isJoined);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isWakingUp, setIsWakingUp] = useState(false); // 核心状态：标记后端是否在冷启动
 
   // 使用 useRef 持久化保存 Yjs 相关的实例，防止重绘丢失
   const ydocRef = useRef(null);
@@ -152,9 +155,52 @@ export default function useWorkspaceSocket({
     };
   }, [currentSocket, roomId]);  // 依赖数组：只有当 socket 实例或房间号发生本质变化时，才重新绑定
 
+  // 3. 监听 Render 冷启动与连接状态
+  useEffect(() => {
+    // 如果还没生成 socket 实例，直接退出
+    if (!currentSocket) return;
+
+    // 设定 3 秒定时器，检测是否遭遇 Render 冷启动休眠
+    const wakeUpTimer = setTimeout(() => {
+      if (!currentSocket.connected) {
+        setIsWakingUp(true);
+      }
+    }, 3000);
+
+    // 成功连接时的处理
+    const handleConnect = () => {
+      setIsConnected(true);
+      setIsWakingUp(false); // 唤醒成功，关闭 Loading
+      clearTimeout(wakeUpTimer);
+    };
+
+    // 断开连接时的处理
+    const handleDisconnect = () => {
+      setIsConnected(false);
+    };
+
+    // 绑定事件
+    currentSocket.on('connect', handleConnect);
+    currentSocket.on('disconnect', handleDisconnect);
+
+    // 边缘情况兜底：如果执行到这里时，socket 瞬间就已经连上了
+    if (currentSocket.connected) {
+      handleConnect();
+    }
+
+    // 清理函数：当 socket 实例改变或组件卸载时，精确拔掉监听器
+    return () => {
+      clearTimeout(wakeUpTimer);
+      currentSocket.off('connect', handleConnect);
+      currentSocket.off('disconnect', handleDisconnect);
+    };
+  }, [currentSocket]); // 依赖现成的 currentSocket
+
   // 把 Yjs 的实例暴露出去，给外面的 App.jsx 用
   return {
     ydoc: ydocRef.current,
-    provider: providerRef.current
+    provider: providerRef.current,
+    isConnected,
+    isWakingUp
   }
 }

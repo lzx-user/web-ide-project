@@ -80,7 +80,7 @@ function App() {
 
   fileCacheMap.current.monacoRef = monacoRef;
   // 接收 Yjs 实例，并且删掉 setCurrentCode 传参
-  const { ydoc, provider } = useWorkspaceSocket({
+  const { ydoc, provider, isConnected, isWakingUp } = useWorkspaceSocket({
     currentSocket,
     roomId,
     fileCacheMap,
@@ -380,6 +380,16 @@ function App() {
     // 最外层背景改为纯白
     <div className="h-screen w-screen bg-white text-gray-800 font-sans overflow-hidden flex flex-col">
       <Toaster position="top-center" reverseOrder={false} />
+
+      {/* 🌟 核心拦截区：优雅的冷启动遮罩层 */}
+      {isWakingUp && !isConnected && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm">
+          {/* 这里用 Tailwind 画一个简单的原生 CSS 旋转 Loading */}
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+          <h3 className="text-xl font-bold text-gray-800 tracking-wide">正在唤醒云端协作服务...</h3>
+          <p className="text-sm text-gray-500 mt-3 font-medium">由于免费实例限制，首次唤醒可能需要 30 ~ 50 秒，请耐心稍候 ☕️</p>
+        </div>
+      )}
 
       <div className="flex-1 overflow-hidden">
         <Allotment>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { SquareTerminal, ArrowRight } from 'lucide-react';
+import { SquareTerminal, ArrowRight, Loader2 } from 'lucide-react';
 /**
  * Login 组件 (登录与协作大厅)
  * 职责：负责收集用户的身份信息与目标房间号，将表单数据向上传递。
@@ -12,16 +12,30 @@ function Login({ onJoinRoom, initialRoomId }) {
   const [username, setUsername] = useState('');
   const [roomId, setRoomId] = useState(initialRoomId || '');
 
+  // 新增局部 loading 状态
+  const [isLoggingIn, setLoggingIn] = useState(false);
   /**
    * 提交表单逻辑
    * 拦截空输入，非空时触发外层 App 组件的回调，处理后续的 JWT 获取和 Socket 连接。
    */
-  const handleJoin = () => {
+  const handleJoin = async () => {
     if (!username || !roomId) {
       alert('请输入昵称和房间号');
       return;
     }
-    onJoinRoom(username, roomId);
+
+    // 点击后立即开启 loading
+    setLoggingIn(true);
+
+    try {
+      // 这里需要外层的 onJoinRoom 返回一个 Promise 才能被 await
+      await onJoinRoom(username, roomId);
+    } catch (error) {
+      console.error('登录失败:', error);
+    } finally {
+      // 无论成功还是失败，都解除 loading
+      setLoggingIn(false);
+    }
   };
 
   return (
@@ -72,13 +86,26 @@ function Login({ onJoinRoom, initialRoomId }) {
             />
           </div>
 
-          {/* 提交按钮：主色调保持高对比度的蓝色 */}
+          {/* 3. 修改提交按钮 */}
           <button
             onClick={handleJoin}
-            className="mt-4 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg font-bold shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98]"
+            disabled={isLoggingIn} // 正在登录时锁死按钮，防止连击
+            className={`mt-4 flex items-center justify-center gap-2 text-white p-3 rounded-lg font-bold shadow-lg transition-all active:scale-[0.98] ${isLoggingIn
+              ? 'bg-blue-400 cursor-not-allowed shadow-blue-400/20'
+              : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20'
+              }`}
           >
-            进入编辑器
-            <ArrowRight size={18} />
+            {isLoggingIn ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                正在唤醒云端环境...
+              </>
+            ) : (
+              <>
+                进入编辑器
+                <ArrowRight size={18} />
+              </>
+            )}
           </button>
         </div>
       </div>
