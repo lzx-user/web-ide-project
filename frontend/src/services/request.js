@@ -12,7 +12,7 @@ import axios from 'axios';
 const request = axios.create({
   // 严格使用环境变量
   baseURL: import.meta.env.VITE_API_BASE_URL,
-  timeout: 5000, // 设置超时时间（5秒）
+  timeout: 30000, // 将 5000 改为 30000（30秒），给予云服务器充足的冷启动苏醒时间
 });
 
 // 2. 请求拦截器：在真正发请求前“拦住”，塞点东西进去

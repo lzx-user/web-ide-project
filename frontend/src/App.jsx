@@ -56,6 +56,8 @@ function App() {
   const bottomTab = useIDEStore((state) => state.bottomTab);
   const setBottomTab = useIDEStore((state) => state.setBottomTab);
 
+  const [isEditorMounted, setIsEditorMounted] = useState(false); // 新增：记录编辑器是否挂载完毕
+
   // 2. 底层实例缓存(依然需要保留)
   const editorRef = useRef(null); //  用于存放编辑器的 DOM 容器，确保实例捕获与 UI 渲染解耦，避免不必要的 re-render 导致实例丢失。
   const monacoRef = useRef(null); // 缓存 Monaco 实例，用来创建模型和其他编辑器相关的操作
@@ -96,7 +98,8 @@ function App() {
   const handleEditorDidMount = (editor, monaco) => {
     editorRef.current = editor; // 将实例装进 ref 容器
     monacoRef.current = monaco; // 记录 monaco 核心对象，一会创建 Model 时会用到
-    console.log('Monaco Editor 挂载成功，等待绑定文件...');
+    setIsEditorMounted(true);  // 新增：触发组件重绘
+    console.log('Monaco Editor 挂载成功，准备绑定文件...');
   };
 
   // 登录/加入房间流程
@@ -368,7 +371,7 @@ function App() {
 
     prevFileRef.current = targetFile;
 
-  }, [activeFile, ydoc, provider]); // 依赖加入了 ydoc 和 provider，确保通道建立后自动触发绑定
+  }, [activeFile, ydoc, provider, isEditorMounted]); // 依赖加入了 ydoc 和 provider，确保通道建立后自动触发绑定
 
   // 6. 渲染 UI
 

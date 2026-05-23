@@ -17,7 +17,7 @@ const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || 'localhost';
 
 // 跨域设置：开发环境下建议设为 '*'，生产环境应设为具体的域名
-const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+const CORS_ORIGIN = process.env.CORS_ORIGIN || '*'
 
 // 运行环境标识
 const NODE_ENV = process.env.NODE_ENV || 'development';
