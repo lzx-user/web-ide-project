@@ -223,12 +223,20 @@ export default function Sidebar({
             </button>
           </div>
         ) : (
-          <button
-            onClick={() => setCreatingState({ path: 'root', type: 'file' })}
-            className="w-full flex items-center justify-center gap-2 py-1.5 rounded-md text-sm text-gray-500 border border-dashed border-gray-300 hover:border-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-all"
-          >
-            <Plus size={16} /> 新建根文件
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setCreatingState({ path: 'root', type: 'file' })}
+              className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-sm text-gray-500 border border-dashed border-gray-300 hover:border-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-all"
+            >
+              <Plus size={14} /> 文件
+            </button>
+            <button
+              onClick={() => setCreatingState({ path: 'root', type: 'folder' })}
+              className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-sm text-gray-500 border border-dashed border-gray-300 hover:border-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-all"
+            >
+              <Plus size={14} /> 文件夹
+            </button>
+          </div>
         )}
       </div>
 
