@@ -115,9 +115,27 @@ export default function useWorkspaceSocket({
       // 1. 直接把后端发来的树存进 Zustand
       setFileList(codeTree);
 
-      // 2. 如果这是第一次进房间，而且树里有文件，且当前没选中文件，自动选中第一个
-      if (codeTree.length > 0 && !useIDEStore.getState().activeFile) {
-        // 为了安全起见，我们默认选中第一层的第一个文件（如果是文件夹，则需要更复杂的寻址，这里简写）
+      const currentActive = useIDEStore.getState().activeFile;
+
+      // 修复幽灵文件 Bug：拍平树结构，检查当前 activeFile 是否还在服务器的物理磁盘上
+      const flattenPaths = (nodes) => {
+        let paths = [];
+        nodes.forEach(node => {
+          paths.push(node.path);
+          if (node.children) paths.push(...flattenPaths(node.children));
+        });
+        return paths;
+      };
+
+      const allPaths = flattenPaths(codeTree);
+
+      if (currentActive && !allPaths.includes(currentActive)) {
+        // 如果本地记得有个文件，但后端发来的树里没这个文件了（被云端清空或被队友删了）
+        // 必须立刻清空本地认知，防止渲染“幽灵路径”
+        setActiveFile('');
+        localStorage.removeItem(STORAGE_KEYS.ACTIVE_FILE);
+      } else if (codeTree.length > 0 && !currentActive) {
+        // 如果这是第一次进房间且没选中文件，自动选中第一个
         const firstNode = codeTree[0];
         setActiveFile(firstNode.path);
       }
