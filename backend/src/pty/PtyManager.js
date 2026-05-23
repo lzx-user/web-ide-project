@@ -25,12 +25,14 @@ class PtyManager {
       cols: 80,
       rows: 30,
       cwd: workspaceDir,  // 还原真实的 IDE 目录体验
-      env: {
-        ...process.env,
-        // 新增：强制重写 Linux 终端提示符，变得极简且酷炫
-        PS1: '\\u@web-ide:\\W\\$ '
-      }
+      env: process.env
     });
+
+    // 新增：暴力注入指令！强行重写提示符并清屏
+    if (os.platform() !== 'win32') {
+      this.ptyProcess.write('export PS1="\\u@web-ide:\\W\\$ "\r');
+      this.ptyProcess.write('clear\r');
+    }
 
     // 监听进程输出，推给前端
     this.ptyProcess.on('data', (data) => {

@@ -29,3 +29,36 @@
   --separator-border: #e5e7eb;
   /* 极浅的灰色边框 */
 }
+
+/* --- Yjs 协同光标核心样式 --- */
+.yRemoteSelection {
+  background-color: rgb(250, 129, 0, 0.2);
+}
+
+.yRemoteSelectionHead {
+  position: absolute;
+  border-left: 2px solid orange;
+  border-bottom: 2px solid orange;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* 利用 CSS attr() 读取我们在 js 中注入的名字 */
+.yRemoteSelectionHead::after {
+  position: absolute;
+  content: attr(data-client-name);
+  background-color: inherit;
+  /* 继承 js 随机生成的颜色 */
+  color: white;
+  font-size: 12px;
+  font-family: sans-serif;
+  font-weight: bold;
+  padding: 2px 6px;
+  top: -20px;
+  left: -2px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
