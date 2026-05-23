@@ -32,6 +32,8 @@ export default function useWorkspaceSocket({
   const isJoined = useIDEStore((state) => state.isJoined);
   const [isConnected, setIsConnected] = useState(false);
   const [isWakingUp, setIsWakingUp] = useState(false); // 核心状态：标记后端是否在冷启动
+  const [ydoc, setYdoc] = useState(null);
+  const [provider, setProvider] = useState(null);
 
   // 使用 useRef 持久化保存 Yjs 相关的实例，防止重绘丢失
   const ydocRef = useRef(null);
@@ -52,6 +54,7 @@ export default function useWorkspaceSocket({
     // 1. 初始化本地微型数据库(每个房间一个 Doc)
     const ydoc = new Y.Doc();
     ydocRef.current = ydoc;
+    setYdoc(ydoc);
 
     // 2. 注入离线：将当前房间的 ydoc 绑定到浏览器的本地数据库
     // 只要有改动，它会自动默默写入硬盘；初始化时，它会自动从硬盘把历史拉出来
@@ -69,6 +72,7 @@ export default function useWorkspaceSocket({
       ydoc
     );
     providerRef.current = provider;
+    setProvider(provider);
 
     console.log('[Yjs] 🔗 数据面连接已建立，准备接管代码同步');
 
@@ -216,8 +220,8 @@ export default function useWorkspaceSocket({
 
   // 把 Yjs 的实例暴露出去，给外面的 App.jsx 用
   return {
-    ydoc: ydocRef.current,
-    provider: providerRef.current,
+    ydoc,
+    provider,
     isConnected,
     isWakingUp
   }

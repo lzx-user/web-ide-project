@@ -195,9 +195,18 @@ io.on('connection', (socket) => {
 
     try {
       if (fs.existsSync(filePath)) {
-        // 1. 删除磁盘上的物理文件
-        await fs.promises.unlink(filePath);
-        // 2. 删除后，重新生成这棵树，全量广播给所有人
+        // // 1. 删除磁盘上的物理文件
+        // await fs.promises.unlink(filePath);
+        // // 2. 删除后，重新生成这棵树，全量广播给所有人
+        // io.to(roomId).emit('initCodePackage', buildFileTree(roomDir));
+        const stat = fs.statSync(filePath);
+        if (stat.isDirectory()) {
+          // 删文件夹（recursive 会连同内容一起删）
+          await fs.promises.rm(filePath, { recursive: true, force: true });
+        } else {
+          // 删文件
+          await fs.promises.unlink(filePath);
+        }
         io.to(roomId).emit('initCodePackage', buildFileTree(roomDir));
       }
     } catch (err) {

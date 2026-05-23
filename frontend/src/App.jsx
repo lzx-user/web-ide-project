@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { cloneDeep, debounce } from 'lodash'; // 防抖
-import axios from 'axios';
+// import { cloneDeep, debounce } from 'lodash'; // 防抖
+// import axios from 'axios';
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
 import toast, { Toaster } from 'react-hot-toast';
@@ -14,9 +14,9 @@ import CodeEditor from './components/CodeEditor';
 import XTerminal from './components/XTerminal';
 import Login from './components/Login';
 import OutputPanel from './components/OutputPanel';
-import { socket, connectSocket } from './services/socket';
+import { connectSocket } from './services/socket';
 import request from './services/request'; // 统一请求封装
-import { Editor } from '@monaco-editor/react';
+// import { Editor } from '@monaco-editor/react';
 import { Code2 } from 'lucide-react';
 // 引入全新状态引擎
 import useIDEStore from './store/useIDEStore';
@@ -47,8 +47,7 @@ function App() {
   // 目录树状态
   const fileList = useIDEStore((state) => state.fileList);
   const setFileList = useIDEStore((state) => state.setFileList);
-  // 引入 Store 里的方法
-  const addFileToFileList = useIDEStore((state) => state.addFileToFileList);
+
 
   const isTerminalOpen = useIDEStore((state) => state.isTerminalOpen);
   const setIsTerminalOpen = useIDEStore((state) => state.setIsTerminalOpen);
@@ -206,7 +205,7 @@ function App() {
   const handleSave = async () => {
     // 如果没有房间号，直接拦截，不让它往后端发瞎请求
     if (!editorRef.current || isSaving || !roomId) {
-      writeLog('error', '未获取到房间号，无法保存');
+      toast.error('未获取到房间号，无法保存');
       return;
     }
 
@@ -233,7 +232,7 @@ function App() {
   // 运行代码逻辑
   const handleRun = async () => {
     if (!editorRef.current || isRunning || !roomId) {
-      writeLog('error', '未获取到房间号，无法运行代码');
+      toast.error('未获取到房间号，无法运行代码');
       return;
     }
     const code = editorRef.current.getValue(); // 提取纯文本
@@ -333,12 +332,22 @@ function App() {
       bindingRef.current = null;
     }
 
+    // 工具函数
+    const getLanguage = (filename) => {
+      if (filename.endsWith('.js') || filename.endsWith('.jsx')) return 'javascript';
+      if (filename.endsWith('.css')) return 'css';
+      if (filename.endsWith('.json')) return 'json';
+      if (filename.endsWith('.html')) return 'html';
+      if (filename.endsWith('.ts') || filename.endsWith('.tsx')) return 'typescript';
+      return 'plaintext';
+    };
+
     // 2. 找新文件模型：如果没有，就用空字符串创建一个
     let targetCache = fileCacheMap.current.get(targetFile);
     if (!targetCache) {
       const newModel = monaco.editor.createModel(
         '', // 初始给空字符串即可，Yjs 连上后会自动把服务器的真实内容塞进来
-        'javascript',
+        getLanguage(targetFile),
         monaco.Uri.parse(`file://${targetFile}`) // 根据targetFile的后缀判断是css还是json
       );
       targetCache = { model: newModel, viewState: null };
