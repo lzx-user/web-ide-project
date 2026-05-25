@@ -11,7 +11,7 @@ import axios from 'axios';
 // 1. 创建一个独立的 Axios 实例
 const request = axios.create({
   // 严格使用环境变量
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  baseURL: import.meta.env.VITE_API_BASE_URL,  // 这里读取了环境变量
   timeout: 30000, // 将 5000 改为 30000（30秒），给予云服务器充足的冷启动苏醒时间
 });
 

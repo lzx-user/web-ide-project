@@ -32,6 +32,11 @@ class PtyManager {
     if (os.platform() !== 'win32') {
       this.ptyProcess.write('export PS1="\\u@web-ide:\\W\\$ "\r');
       this.ptyProcess.write('clear\r');
+
+      // 等 PTY 执行完初始化，再通知前端清屏
+      setTimeout(() => {
+        this.socket.emit('terminal-ready');
+      }, 500);
     }
 
     // 监听进程输出，推给前端

@@ -64,12 +64,12 @@ export default function XTerminal({ currentSocket }) {
     term.open(terminalRef.current);
     termRef.current = term;  // 缓存实例给其他 useEffect 用
 
-    // 新增：等待后端初始化命令执行完毕，再清一次屏
-    setTimeout(() => {
+    // 改成监听后端信号
+    currentSocket.on('terminal-ready', () => {
       if (termRef.current) {
         termRef.current.clear();
       }
-    }, 800);
+    });
 
     // 增加宽高缓存，防止冗余 resize 触发后端 PTY 重绘清屏
     let lastCols = 0;
@@ -143,6 +143,7 @@ export default function XTerminal({ currentSocket }) {
     return () => {
       disposable.dispose(); // 清除键盘事件监听
       currentSocket.off('terminal-out', handleOutput);
+      currentSocket.off('terminal-ready');
     };
   }, [currentSocket]); // 只有 Socket 变化时才重新绑定通信
 

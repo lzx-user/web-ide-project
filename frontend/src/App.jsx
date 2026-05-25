@@ -1,6 +1,4 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-// import { cloneDeep, debounce } from 'lodash'; // 防抖
-// import axios from 'axios';
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
 import toast, { Toaster } from 'react-hot-toast';
@@ -16,7 +14,6 @@ import Login from './components/Login';
 import OutputPanel from './components/OutputPanel';
 import { connectSocket } from './services/socket';
 import request from './services/request'; // 统一请求封装
-// import { Editor } from '@monaco-editor/react';
 import { Code2 } from 'lucide-react';
 // 引入全新状态引擎
 import useIDEStore from './store/useIDEStore';
