@@ -17,7 +17,7 @@ class PtyManager {
 
     // 为每个房间创建一个 pty 进程
     const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
-    const args = os.platform() === 'win32' ? ['-NoLogo'] : [];
+    const args = os.platform() === 'win32' ? ['-NoLogo'] : ['--norc'];
 
     // 1. 拷贝当前宿主机的环境变量，并强制注入我们自定义的 PS1
     const customEnv = Object.assign({}, process.env);
@@ -31,7 +31,7 @@ class PtyManager {
       cols: 80,
       rows: 30,
       cwd: workspaceDir,  // 还原真实的 IDE 目录体验
-      env: customEnv.env
+      env: customEnv
     });
 
     // 监听进程输出，推给前端
