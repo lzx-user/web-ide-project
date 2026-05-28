@@ -361,7 +361,7 @@ function App() {
     // 根据当前文件名，向 Yjs 索要一个专属的共享文本类型。比如 ydoc.getText('index.js')
     const ytext = ydoc.getText(targetFile);
 
-    // 给光标涂上颜色和名字（面试超级加分项：Awareness 协议）
+    // 向 Awareness 协议注入自定义身份（用于渲染别人屏幕上的光标名字）
     provider.awareness.setLocalStateField('user', {
       name: useIDEStore.getState().username || '前端开发工程师',
       color: '#' + Math.floor(Math.random() * 16777215).toString(16)  // 随机生成一个十六进制颜色  

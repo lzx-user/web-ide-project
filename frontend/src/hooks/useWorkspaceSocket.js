@@ -36,7 +36,7 @@ export default function useWorkspaceSocket({
   const [provider, setProvider] = useState(null);
 
   // 使用 useRef 持久化保存 Yjs 相关的实例，防止重绘丢失
-  const ydocRef = useRef(null);
+  const ydocRef = useRef(null);  // 创建本地数学链表
   const providerRef = useRef(null);
 
   const writeLog = (type, text) => {
@@ -57,7 +57,7 @@ export default function useWorkspaceSocket({
     setYdoc(ydoc);
 
     // 2. 注入离线：将当前房间的 ydoc 绑定到浏览器的本地数据库
-    // 只要有改动，它会自动默默写入硬盘；初始化时，它会自动从硬盘把历史拉出来
+    // 挂载浏览器本地数据库，做离线历史合并树
     const indexeddbProvider = new IndexeddbPersistence(`room-${roomId}`, ydoc);
 
     indexeddbProvider.on('synced', () => {
@@ -65,7 +65,7 @@ export default function useWorkspaceSocket({
     });
 
     // 3. 建立与后端 1234 端口的高速公路
-    // ws 协议，直接连我们的数据面
+    // 建立 wss:// 协同专线 连接数据面
     const provider = new WebsocketProvider(
       import.meta.env.VITE_YJS_URL,
       roomId,

@@ -19,25 +19,20 @@ class PtyManager {
     const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
     const args = os.platform() === 'win32' ? ['-NoLogo'] : [];
 
+    // 1. 拷贝当前宿主机的环境变量，并强制注入我们自定义的 PS1
+    const customEnv = Object.assign({}, process.env);
+    if (os.platform() !== 'win32') {
+      customEnv.PS1 = "\\u@web-ide:\\W\\$";
+    }
+
     // 2. 将终端的活动目录死死锁定在这个工作区
     this.ptyProcess = pty.spawn(shell, args, {
       name: 'xterm-color',
       cols: 80,
       rows: 30,
       cwd: workspaceDir,  // 还原真实的 IDE 目录体验
-      env: process.env
+      env: customEnv.env
     });
-
-    // 新增：暴力注入指令！强行重写提示符并清屏
-    if (os.platform() !== 'win32') {
-      this.ptyProcess.write('export PS1="\\u@web-ide:\\W\\$ "\r');
-      this.ptyProcess.write('clear\r');
-
-      // 等 PTY 执行完初始化，再通知前端清屏
-      setTimeout(() => {
-        this.socket.emit('terminal-ready');
-      }, 500);
-    }
 
     // 监听进程输出，推给前端
     this.ptyProcess.on('data', (data) => {
