@@ -9,12 +9,14 @@ const { spawn, exec } = require('child_process');
 const roomRouter = require('./src/routes/room');
 const codeRouter = require('./src/routes/code');
 const PtyManager = require('./src/pty/PtyManager');
+const { safeResolve } = require('./src/utils/safePath');
 // 引入 ws 模块
 const WebSocket = require('ws');
 const { setupWSConnection } = require('y-websocket/bin/utils');
 // 1. 引入统一配置文件
 const config = require('./config');
 const { randomUUID } = require('crypto');
+const ENABLE_TERMINAL = process.env.ENABLE_TERMINAL === 'true';  // 从环境变量读取配置
 /**
  * Web IDE 后端核心服务
  * 思路：
@@ -188,29 +190,46 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 删除文件
-  socket.on('deleteFile', async (data) => {
-    const { roomId, filename } = data;
-    const filePath = path.join(roomDir, filename);
+  // 删除文件 / 文件夹
+  socket.on('deleteFile', async (data, callback) => {
+    const { filename } = data | {};
 
     try {
-      if (fs.existsSync(filePath)) {
-        // // 1. 删除磁盘上的物理文件
-        // await fs.promises.unlink(filePath);
-        // // 2. 删除后，重新生成这棵树，全量广播给所有人
-        // io.to(roomId).emit('initCodePackage', buildFileTree(roomDir));
-        const stat = fs.statSync(filePath);
-        if (stat.isDirectory()) {
-          // 删文件夹（recursive 会连同内容一起删）
-          await fs.promises.rm(filePath, { recursive: true, force: true });
-        } else {
-          // 删文件
-          await fs.promises.unlink(filePath);
-        }
-        io.to(roomId).emit('initCodePackage', buildFileTree(roomDir));
+      if (!filename) {
+        throw new Error('文件名不能为空');
+      }
+
+      // 使用 JWT 中的 roomId, 不信任前端传来的 roomId
+      const { resolvedPath: filePath } = safeResolve(roomDir, filename);
+
+      if (!fs.existsSync(filePath)) {
+        throw new Error('文件不存在或已被删除');
+      }
+
+      const stat = await fs.promises.stat(filePath);
+
+      if (stat.isDirectory()) {
+        // 删除文件夹：连同子内容一起删除
+        await fs.promises.rm(filePath, { recursive: true, force: true });
+      } else {
+        // 删除普通文件
+        await fs.promises.unlink(filePath);
+      }
+
+      // 删除后广播最新文件树
+      io.to(roomId).emit('initCodePackage', buildFileTree(roomDir));
+
+      if (typeof callback === 'function') {
+        callback({ success: true });
       }
     } catch (err) {
-      socket.emit('terminalError', `删除文件失败: ${err.message}`);
+      socket.error('删除文件失败:', err.message);
+
+      if (typeof callback === 'function') {
+        callback({ success: false, msg: err.message });
+      }
+
+      socket.emit('codeError', `删除文件失败: ${err.message}`);
     }
   });
 
@@ -287,23 +306,33 @@ io.on('connection', (socket) => {
   });
 
   // 初始化用户的专属伪终端
-  const userPty = new PtyManager(socket, roomId);
+  let userPty = null;
 
-  // 监听前端发来的窗口大小变化，调用 pty 的 resize 方法调整后端进程
-  socket.on('terminal-resize', ({ cols, rows }) => {
-    if (userPty && userPty.ptyProcess) {
-      try {
-        userPty.resize(cols, rows);
-      } catch (err) {
-        console.log('重置终端大小失败:', err);
+  // 只有在明确开启终端时，才创建真实的PTY
+  if (ENABLE_TERMINAL) {
+    userPty = new PtyManager(socket, roomId);
+
+    // 监听前端发来的窗口大小变化，调用 pty 的 resize 方法调整后端进程
+    socket.on('terminal-resize', ({ cols, rows }) => {
+      if (userPty && userPty.ptyProcess) {
+        try {
+          userPty.resize(cols, rows);
+        } catch (err) {
+          console.log('重置终端大小失败:', err.message);
+        }
       }
-    }
-  });
+    });
+  } else {
+    console.log(`[房间 ${roomId}] 生产环境已禁用真实终端`);
+  }
 
   socket.on('disconnect', () => {
-    console.log(`[房间 ${roomId}] 用户 ${username} 已离开`);
-    // 用户离开时，销毁属于他的终端进程
-    if (userPty) userPty.destroy();
+    console.log(`[房间 ${roomId}] 用户 ${username} 已断开连接`);
+
+    // 如果本次连接创建过终端，断开时才销毁
+    if (userPty) {
+      userPty.destroy();
+    }
   });
 });
 

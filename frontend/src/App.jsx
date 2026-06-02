@@ -51,6 +51,8 @@ function App() {
 
   const bottomTab = useIDEStore((state) => state.bottomTab);
   const setBottomTab = useIDEStore((state) => state.setBottomTab);
+  // 添加开关 用于条件选择
+  const enableTerminal = import.meta.env.VITE_ENABLE_TERMINAL === 'true';
 
   const [isEditorMounted, setIsEditorMounted] = useState(false); // 新增：记录编辑器是否挂载完毕
 
@@ -186,7 +188,13 @@ function App() {
     // 拦截确认，防止手滑误删
     if (window.confirm(`确定要删除 ${filename}`)) {
       if (currentSocket) {
-        currentSocket.emit('deleteFile', { roomId, filename });
+        currentSocket.emit('deleteFile', { filename }, (response) => {
+          if (!response) return;
+
+          if (!response.success) {
+            toast.error(`删除失败: ${response.msg}`);
+          }
+        });
       }
 
       // 如果被删的文件刚好是当前正在编辑的文件，必须清空编辑器
@@ -483,15 +491,32 @@ function App() {
 
                     {/* 终端面板：绝对定位占满，选中时透明度为1，未选中时透明度为0且禁止点击 */}
                     <div
-                      className={`absolute inset-0 transition-opacity duration-200 ${bottomTab === 'terminal' ? 'z-10 opacity-100' : 'z-0 opacity-0 pointer-events-none'
+                      className={`absolute inset-0 transition-opacity duration-200 ${bottomTab === 'terminal'
+                        ? 'z-10 opacity-100'
+                        : 'z-0 opacity-0 pointer-events-none'
                         }`}
                     >
-                      {currentSocket && <XTerminal currentSocket={currentSocket} />}
+                      {enableTerminal && currentSocket ? (
+                        <XTerminal currentSocket={currentSocket} />
+                      ) : (
+                        <div className="h-full w-full flex flex-col items-center justify-center bg-gray-50 text-gray-500 font-mono text-sm">
+                          <div className="text-lg font-semibold text-gray-700 mb-2">
+                            Terminal Disabled in Public Demo
+                          </div>
+                          <div>Interactive shell is disabled for production security.</div>
+                          <div className="mt-1">Please use the Output panel to run JavaScript code.</div>
+                          <div className="mt-4 text-xs text-gray-400">
+                            Full terminal support requires Docker-based sandbox isolation.
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* 输出面板：绝对定位占满 */}
                     <div
-                      className={`absolute inset-0 bg-white transition-opacity duration-200 ${bottomTab === 'output' ? 'z-10 opacity-100' : 'z-0 opacity-0 pointer-events-none'
+                      className={`absolute inset-0 bg-white transition-opacity duration-200 ${bottomTab === 'output'
+                        ? 'z-10 opacity-100'
+                        : 'z-0 opacity-0 pointer-events-none'
                         }`}
                     >
                       <OutputPanel />

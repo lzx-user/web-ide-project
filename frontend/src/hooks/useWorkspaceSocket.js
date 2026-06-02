@@ -146,8 +146,6 @@ export default function useWorkspaceSocket({
     };
 
     // --- 事件绑定 ---
-    currentSocket.on('terminalOutput', handleOutput);
-    currentSocket.on('terminalError', handleError);
     currentSocket.on('codeOutput', handleCodeOutput);
     currentSocket.on('codeError', handleCodeError);
     currentSocket.on('executionStarted', handleExecutionStarted);
@@ -166,8 +164,6 @@ export default function useWorkspaceSocket({
     // --- 组件卸载/Socket重连时的清理函数 (Cleanup) ---
     // 必须精确卸载指定的具名函数，防止误杀其他模块绑定的同名事件监听器，避免内存泄漏
     return () => {
-      currentSocket.off('terminalOutput', handleOutput);
-      currentSocket.off('terminalError', handleError);
       currentSocket.off('codeOutput', handleCodeOutput);
       currentSocket.off('codeError', handleCodeError);
       currentSocket.off('executionFinished', handleFinish);
