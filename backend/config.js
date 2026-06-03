@@ -9,8 +9,16 @@
 require('dotenv').config();
 
 // JWT 相关配置
-const JWT_SECRET = process.env.JWT_SECRET || 'your_super_secret_key_here';
-const JWT_EXPIRES = '24h';
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_EXPIRES = process.env.JWT_EXPIRES || '24h';
+
+if (!JWT_SECRET) {
+  throw new Error('缺少必要环境变量 JWT_SECRET，请在 backend/.env 或部署平台环境变量中配置');
+}
+
+if (JWT_SECRET.length < 32) {
+  throw new Error('JWT_SECRET 长度过短，建议至少 32 位以上');
+}
 
 // 服务器运行配置
 const PORT = process.env.PORT || 3000;
