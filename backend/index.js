@@ -128,65 +128,52 @@ io.on('connection', (socket) => {
   // 新建文件/文件夹 （支持多级目录探测与完全隔离）
   socket.on('createFile', async (data, callback) => {
     // 接收前端传来的 isFolder 标识
-    const { roomId, filename, isFolder } = data;
+    const { filename, isFolder } = data || {};
 
     try {
-      // 路径净化1. 统一将 Windows 的反斜杠 \ 转换为正斜杠 /，并合并连续的多个斜杠
-      let normalizedPath = filename.replace(/\\/g, '/').replace(/\/+/g, '/');
-
-      // 路径净化2. 使用 path.posix 规范进行相对路径计算（防止 Windows 平台差异引发剥离错误）
-      normalizedPath = path.posix.normalize(normalizedPath);
-
-      // 安全核心：严格越界检查！只要路径企图切到外层（以 ../ 开头、等于 .. 或为绝对路径），立刻斩断
-      if (normalizedPath.startsWith('../') || normalizedPath === '..' || path.posix.isAbsolute(normalizedPath)) {
-        if (typeof callback === 'function') callback({ success: false, msg: '越界访问被拒绝' });
-        return;
+      if (!filename) {
+        throw new Error('文件名不能为空');
       }
 
-      // 直接映射到专属房间沙箱
-      const filePath = path.resolve(roomDir, normalizedPath);
+      // 不信任前端传来的 roomId，统一使用 socket.user 里的 roomId
+      const { normalizedPath, resolvedPath: filePath } = safeResolve(roomDir, filename);
 
-      // 双层物理层级越界检查
-      if (!filePath.startsWith(roomDir)) {
-        if (typeof callback === 'function') callback({ success: false, msg: '越界访问' });
-        return;
-      }
-
-      // 检查文件是否已经存在，防止覆盖别人的代码
+      // 防止重名
       if (fs.existsSync(filePath)) {
-        // 如果文件已经存在，直接返回，不创建新文件了
-        socket.emit('terminalError', `创建失败：该路径下的名称已存在`);
-        if (typeof callback === 'function') callback({ success: false, msg: '同名冲突' });
-        return;
+        throw new Error('同名冲突');
       }
 
-      // 执行物理创建（recursive: true 会自动连环创建多级父文件夹）
       if (isFolder) {
-        // 如果是文件夹，直接递归创建目录
-        fs.mkdirSync(filePath, { recursive: true });
+        await fs.promises.mkdir(filePath, { recursive: true });
       } else {
-        // 如果是文件，先提取它的父级目录
-        const dirName = path.dirname(filePath);
+        const parentDir = path.dirname(filePath);
+        await fs.promises.mkdir(parentDir, { recursive: true });
 
-        // 确保父级目录存在，防止创建在空气中报错
-        if (!fs.existsSync(dirName)) fs.mkdirSync(dirName, { recursive: true });
-        // 写入一个空文件
-        await fs.promises.writeFile(filePath, '', 'utf-8');
+        // flag: 'wx' 表示文件已存在时直接失败，避免并发覆盖
+        await fs.promises.writeFile(filePath, '', { flag: 'wx' });
       }
 
-      // 重新扫描并广播最新立体文件树
+      // 创建成功后广播最新文件树
       io.to(roomId).emit('initCodePackage', buildFileTree(roomDir));
+
       // 点对点触发当前用户的 Toast 提示预期管理
       if (typeof callback === 'function') {
         callback({
           success: true,
-          isSanitized: filename !== normalizedPath,  // 告诉前端：我帮你清洗过路径了
+          isSanitized: normalizedPath !== filename,  // 告诉前端：我帮你清洗过路径了
           original: filename,  // 用户原本输入的错误路径
           cleaned: normalizedPath  // 净化后的标准路径
         });
       }
     } catch (err) {
-      if (typeof callback === 'function') callback({ success: false, msg: err.message });
+      console.error('创建文件失败:', err.message);
+
+      if (typeof callback === 'function') {
+        callback({
+          success: false,
+          msg: err.message || '创建文件失败'
+        });
+      }
     }
   });
 
@@ -374,14 +361,50 @@ server.on('upgrade', (request, socket, head) => {
 
   // 2. 如果前端连接 Yjs 的 URL 以 /yjs 开头
   if (url.startsWith('/yjs/')) {
-    // 剔除 /yjs 前缀，暴露出真实的房间号
-    // 例如：/yjs/room-123 -> /room-123
-    request.url = url.substring(4);
+    try {
+      const parsedUrl = new URL(url, `http://${request.headers.host}`);
 
-    yjsWss.handleUpgrade(request, socket, head, (ws) => {
-      yjsWss.emit('connection', ws, request);
-    });
-    return;
+      // yjs/111 -> 111
+      const roomFromUrl = parsedUrl.pathname.replace(/^\/yjs\//, '');
+
+      const token = parsedUrl.searchParams.get('token');
+
+      if (!token) {
+        console.warn('[Yjs鉴权] 缺少 token,  拒接连接');
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
+      const payload = jwt.verify(token, config.jwt.secret);
+
+      if (!payload || payload.roomId !== roomFromUrl) {
+        console.warn('[Yjs鉴权] token 无效或房间不匹配, 拒接连接', {
+          tokenRoom: payload?.roomId,
+          urlRoom: roomFromUrl,
+        });
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
+      // 鉴权通过后，再把 /yjs/111?token=xxx 改成 /111
+      // 注意：这里不要把 token 继续暴露给 Yjs 内部
+      request.url = `/${roomFromUrl}`;
+
+      yjsWss.handleUpgrade(request, socket, head, (ws) => {
+        yjsWss.emit('connection', ws, request);
+      });
+
+      return;
+
+    } catch (err) {
+      console.error('[Yjs鉴权] token 校验失败:', err.message);
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
   }
   // 3. 非法或未知的升级请求，直接销毁连接
   socket.destroy();

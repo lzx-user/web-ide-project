@@ -151,7 +151,7 @@ function App() {
   const handleCreateFile = ({ path, isFolder }) => {
     if (currentSocket) {
       // 像后端发送创建请求 第 3 个参数传入一个回调函数，用来接收后端的点对点确认
-      currentSocket.emit('createFile', { roomId, filename: path, isFolder }, (response) => {
+      currentSocket.emit('createFile', { filename: path, isFolder }, (response) => {
         if (!response) return;
 
         // 建立完整响应生命周期分支

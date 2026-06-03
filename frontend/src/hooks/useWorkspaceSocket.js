@@ -54,12 +54,25 @@ export default function useWorkspaceSocket({
       console.log('[Yjs] 📦 本地离线草稿加载完毕，且保留了完美的历史合并树');
     });
 
+    const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
+
+    if (!token) {
+      console.warn('[Yjs] 缺少 token, 取消数据面连接');
+      ydoc.destroy();
+      return;
+    }
+
     // 3. 建立与后端 1234 端口的高速公路
     // 建立 wss:// 协同专线 连接数据面
     const provider = new WebsocketProvider(
       import.meta.env.VITE_YJS_URL,
       roomId,
-      ydoc
+      ydoc,
+      {
+        params: {
+          token,  // 携带 JWT 作为鉴权凭据
+        },
+      }
     );
     providerRef.current = provider;
     setProvider(provider);
