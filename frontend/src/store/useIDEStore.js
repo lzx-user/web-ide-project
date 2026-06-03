@@ -8,7 +8,6 @@ const useIDEStore = create((set, get) => ({
   socket: null, // WebSocket 实例
   activeFile: '', // 当前选中的文件
   fileList: [], // 存放后端发来的整棵树
-  terminalLogsMap: {},  // 防止第一次打印日志时解构出 undefined 导致白屏
 
   // 底部面板状态管理
   // 1. 记录当前处于哪个Tab, 默认显示 terminal
@@ -37,17 +36,6 @@ const useIDEStore = create((set, get) => ({
   setSocket: (socketInstance) => set({ socket: socketInstance }),
   setActiveFile: (filename) => set({ activeFile: filename }),
 
-  // 追加日志：直接在 Store 里处理复杂的对象合并逻辑
-  addLog: (filename, type, text) =>
-    set((state) => {
-      const currentLogs = state.terminalLogsMap[filename] || [];
-      return {
-        terminalLogsMap: {
-          ...state.terminalLogsMap,
-          [filename]: [...currentLogs, { id: Date.now(), type, text }],
-        },
-      };
-    }),
 }));
 
 export default useIDEStore;

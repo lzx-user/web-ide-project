@@ -192,7 +192,7 @@ io.on('connection', (socket) => {
 
   // 删除文件 / 文件夹
   socket.on('deleteFile', async (data, callback) => {
-    const { filename } = data | {};
+    const { filename } = data || {};
 
     try {
       if (!filename) {
@@ -223,7 +223,7 @@ io.on('connection', (socket) => {
         callback({ success: true });
       }
     } catch (err) {
-      socket.error('删除文件失败:', err.message);
+      console.error('删除文件失败:', err.message);
 
       if (typeof callback === 'function') {
         callback({ success: false, msg: err.message });

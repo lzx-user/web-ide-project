@@ -29,7 +29,6 @@ export const connectSocket = (roomId, token) => {
   // 3. 全局错误监听：捕获鉴权失败或连接异常
   socket.on('connect_error', (err) => {
     console.log('连接失败详情:', err.message);
-    alert('连接服务器失败，可能是登录已过期，请刷新页面重新进入。');
   });
 
   return socket;

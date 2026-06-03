@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
 import toast, { Toaster } from 'react-hot-toast';
@@ -45,6 +45,19 @@ function App() {
   const fileList = useIDEStore((state) => state.fileList);
   const setFileList = useIDEStore((state) => state.setFileList);
 
+  const findNodeByPath = (nodes, targetPath) => {
+    for (const node of nodes) {
+      if (node.path === targetPath) return node;
+      if (node.children) {
+        const found = findNodeByPath(node.children, targetPath);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const activeNode = findNodeByPath(fileList, activeFile);
+  const isActiveFile = activeNode?.type === 'file';
 
   const isTerminalOpen = useIDEStore((state) => state.isTerminalOpen);
   const setIsTerminalOpen = useIDEStore((state) => state.setIsTerminalOpen);
@@ -186,31 +199,48 @@ function App() {
   // 删除文件逻辑
   const handleDeleteFile = (filename) => {
     // 拦截确认，防止手滑误删
-    if (window.confirm(`确定要删除 ${filename}`)) {
-      if (currentSocket) {
-        currentSocket.emit('deleteFile', { filename }, (response) => {
-          if (!response) return;
+    if (!window.confirm(`确定要删除${filename}`)) return;
 
-          if (!response.success) {
-            toast.error(`删除失败: ${response.msg}`);
-          }
-        });
-      }
-
-      // 如果被删的文件刚好是当前正在编辑的文件，必须清空编辑器
-      if (activeFile === filename) {
-        setActiveFile('');
-        // 同步清除本地记忆，否则刷新会炸尸
-        localStorage.removeItem(STORAGE_KEYS.ACTIVE_FILE);
-      }
+    if (!currentSocket) {
+      toast.error('Socket 未连接，无法删除');
+      return;
     }
+
+    currentSocket.emit('deleteFile', { filename }, (response) => {
+      if (!response) {
+        toast.error('删除失败：服务无响应');
+        return;
+      }
+
+      if (!response.success) {
+        toast.error(`删除失败: ${response.msg}`);
+        return;
+      }
+
+      if (response.success) {
+        toast.success('删除成功');
+
+        const cached = fileCacheMap.current.get(filename);
+        if (cached?.model) {
+          cached.model.dispose(); // 销毁 Monaco 模型，释放内存
+        }
+        fileCacheMap.current.delete(filename); // 从缓存中移除
+
+        // 只有后端确认删除成功后，才清空当前文件
+        if (activeFile === filename) {
+          setActiveFile('');
+          // 同步清除本地记忆，否则刷新会炸尸
+          localStorage.removeItem(STORAGE_KEYS.ACTIVE_FILE);
+        }
+      }
+    });
   };
 
   // 保存代码逻辑
   const handleSave = async () => {
     // 如果没有房间号，直接拦截，不让它往后端发瞎请求
-    if (!editorRef.current || isSaving || !roomId) {
-      toast.error('未获取到房间号，无法保存');
+    if (!editorRef.current || isSaving || !roomId || !isActiveFile) {
+      toast.error('请选择一个文件后再保存');
       return;
     }
 
@@ -236,8 +266,8 @@ function App() {
 
   // 运行代码逻辑
   const handleRun = async () => {
-    if (!editorRef.current || isRunning || !roomId) {
-      toast.error('未获取到房间号，无法运行代码');
+    if (!editorRef.current || isRunning || !roomId || !isActiveFile) {
+      toast.error('请选择一个文件后再运行代码');
       return;
     }
     const code = editorRef.current.getValue(); // 提取纯文本
@@ -314,7 +344,7 @@ function App() {
     if (!editor || !monaco || !ydoc || !provider) return;
 
     // 如果当前没有选中任何文件（例如刚删除了当前文件）
-    if (!activeFile) {
+    if (!activeFile || !isActiveFile) {
       // 撕掉可能存在的旧协同绑定
       if (bindingRef.current) {
         bindingRef.current.destroy();
@@ -385,7 +415,7 @@ function App() {
 
     prevFileRef.current = targetFile;
 
-  }, [activeFile, ydoc, provider, isEditorMounted]); // 依赖加入了 ydoc 和 provider，确保通道建立后自动触发绑定
+  }, [activeFile, ydoc, provider, isEditorMounted, isActiveFile]); // 依赖加入了 ydoc 和 provider，确保通道建立后自动触发绑定
 
   // 6. 渲染 UI
 
@@ -434,7 +464,7 @@ function App() {
                     onLeave={handleLeaveRoom}
                   />
                   {/* 如果有 activeFile，才渲染真实编辑器；否则，渲染一个漂亮的空状态占位图 */}
-                  {activeFile ? (
+                  {isActiveFile ? (
                     <CodeEditor onMount={handleEditorDidMount} />
                   ) : (
                     <div className="flex-1 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
@@ -443,7 +473,7 @@ function App() {
                         <Code2 size={96} />
                       </div>
                       <p className="text-lg font-medium tracking-widest text-gray-500">Web IDE 协作空间</p>
-                      <p className="text-sm mt-2">请在左侧资源管理器中选择或新建文件</p>
+                      <p className="text-sm mt-2">请在左侧资源管理器中选择一个文件进行编辑</p>
                     </div>
                   )}
                 </div>

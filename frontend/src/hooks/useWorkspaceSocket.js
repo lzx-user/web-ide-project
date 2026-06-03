@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import useIDEStore from "../store/useIDEStore";
 import { STORAGE_KEYS } from "../utils/constants";
-import { io } from 'socket.io-client';
 // Yjs 核心三剑客
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
-import { MonacoBinding } from 'y-monaco';
 // 引入原生的 IndexedDB 离线持久化工具
 import { IndexeddbPersistence } from 'y-indexeddb';
 
@@ -28,7 +26,6 @@ export default function useWorkspaceSocket({
 }) {
   const setFileList = useIDEStore((state) => state.setFileList);
   const setActiveFile = useIDEStore((state) => state.setActiveFile);
-  const addLog = useIDEStore((state) => state.addLog);
   const isJoined = useIDEStore((state) => state.isJoined);
   const [isConnected, setIsConnected] = useState(false);
   const [isWakingUp, setIsWakingUp] = useState(false); // 核心状态：标记后端是否在冷启动
@@ -38,13 +35,6 @@ export default function useWorkspaceSocket({
   // 使用 useRef 持久化保存 Yjs 相关的实例，防止重绘丢失
   const ydocRef = useRef(null);  // 创建本地数学链表
   const providerRef = useRef(null);
-
-  const writeLog = (type, text) => {
-    const activeFile = useIDEStore.getState().activeFile;
-    if (activeFile) {
-      addLog(activeFile, type, text);
-    }
-  };
 
   // 1. Yjs数据面的初始化
   useEffect(() => {
@@ -90,11 +80,9 @@ export default function useWorkspaceSocket({
     if (!currentSocket) return;
 
     // 终端执行相关事件
-    const handleOutput = (data) => writeLog('info', data);
-    const handleError = (data) => writeLog('error', data);
     // 当进程执行完毕，不仅要打日志，还要把运行状态解锁，允许用户再次点击运行
     const handleFinish = (exitCode) => {
-      writeLog('info', `\n[进程执行完毕，退出码: ${exitCode}]`);
+      useIDEStore.getState().addOutputLog('info', `\n[进程执行完毕，退出码 ${exitCode}]`);
       setIsRunning(false);
     };
 
@@ -131,6 +119,17 @@ export default function useWorkspaceSocket({
         return paths;
       };
 
+      const findFirstFile = (nodes) => {
+        for (const node of nodes) {
+          if (node.type === 'file') return node;
+          if (node.children) {
+            const found = findFirstFile(node.children);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+
       const allPaths = flattenPaths(codeTree);
 
       if (currentActive && !allPaths.includes(currentActive)) {
@@ -139,9 +138,10 @@ export default function useWorkspaceSocket({
         setActiveFile('');
         localStorage.removeItem(STORAGE_KEYS.ACTIVE_FILE);
       } else if (codeTree.length > 0 && !currentActive) {
-        // 如果这是第一次进房间且没选中文件，自动选中第一个
-        const firstNode = codeTree[0];
-        setActiveFile(firstNode.path);
+        const firstFile = findFirstFile(codeTree);
+        if (firstFile) {
+          setActiveFile(firstFile.path);
+        }
       }
     };
 

@@ -1,4 +1,4 @@
-import { FileJson, FileType2, FileCode2, Image, Folder, FileText } from 'lucide-react';
+import { FileJson, FileType2, FileCode2, Folder, FileText } from 'lucide-react';
 
 export const getFileIcon = (filename, isFolder = false, isActive = false) => {
   const size = 16;

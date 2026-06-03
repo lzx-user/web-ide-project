@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { SquareTerminal, ArrowRight, Loader2 } from 'lucide-react';
 /**
  * Login 组件 (登录与协作大厅)
