@@ -28,7 +28,12 @@ const ENABLE_TERMINAL = process.env.ENABLE_TERMINAL === 'true';  // 从环境变
 const app = express();
 
 // 2. 基础中间件配置
-app.use(cors());
+app.use(cors({
+  origin: config.cors.origin,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
 // 解析 application/json 格式的请求体 (JSON 解析中间件)
 app.use(express.json());
 
@@ -40,8 +45,11 @@ app.use('/', codeRouter);
 const server = http.createServer(app);
 // 把socket.io服务器绑定到这个http服务器上
 const io = new Server(server, {
-  cors: { origin: config.cors.origin } // 引用配置中的跨域规则
-})
+  cors: {
+    origin: config.cors.origin,  // 引用配置中的跨域规则
+    methods: ['GET', 'POST'],
+  },
+});
 
 // 确保临时目录存在，用于存放执行代码
 const tempDir = path.join(__dirname, 'temp');

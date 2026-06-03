@@ -8,6 +8,10 @@
 // 加载环境变量（从 .env 文件中读取）
 require('dotenv').config();
 
+// 运行环境标识
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const isProd = NODE_ENV === 'production';
+
 // JWT 相关配置
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES = process.env.JWT_EXPIRES || '24h';
@@ -24,11 +28,14 @@ if (JWT_SECRET.length < 32) {
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || 'localhost';
 
-// 跨域设置：开发环境下建议设为 '*'，生产环境应设为具体的域名
-const CORS_ORIGIN = process.env.CORS_ORIGIN || '*'
+// 跨域设置
+// 开发环境：默认允许本地前端
+// 生产环境：必须显式配置 CORS_ORIGIN，不能使用 *
+const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
 
-// 运行环境标识
-const NODE_ENV = process.env.NODE_ENV || 'development';
+if (isProd && (!process.env.CORS_ORIGIN || process.env.CORS_ORIGIN === '*')) {
+  throw new Error('生产环境必须配置具体的 CORS_ORIGIN，不能使用 *');
+}
 
 module.exports = {
   jwt: {
