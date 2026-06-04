@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 // 创建一个全局的 Store
-const useIDEStore = create((set, get) => ({
+const useIDEStore = create((set) => ({
   // ================= 1. 存放所有全局状态 (State) =================
   isJoined: false, // 是否已登录
   roomId: '', // 房间号

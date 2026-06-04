@@ -25,15 +25,11 @@ const FileTreeNode = React.memo(({
   const [isOpen, setIsOpen] = useState(true);
   const isActive = activeFile === node.path;  // node.path 来判断唯一性
 
+  const shouldForceOpen = creatingState.path === node.path;
+  const isFolderOpen = isOpen || shouldForceOpen;
+
   // 动态计算缩进：层级越深，向右偏移越多
   const indentStyle = { paddingLeft: `${level * 12 + 16}px` };
-
-  // 如果指针正好指向我这个文件夹，自动将我展开
-  useEffect(() => {
-    if (creatingState.path === node.path) {
-      setIsOpen(true);
-    }
-  }, [creatingState.path, node.path]);
 
   // 1. 如果它是文件
   if (node.type === 'file') {
@@ -75,14 +71,14 @@ const FileTreeNode = React.memo(({
         className="group cursor-pointer flex items-center py-2 pr-4 text-sm text-gray-700 hover:bg-gray-100 transition-all border-l-2 border-transparent"
       >
         <div className="flex items-center gap-1 flex-1 min-w-0">
-          {isOpen ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
+          {isFolderOpen ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
           {getFileIcon(node.name, true, false)}
           <span className="truncate font-medium">{node.name}</span>
         </div>
       </div>
 
       {/* 渲染子节点区域 */}
-      {isOpen && (
+      {isFolderOpen && (
         <div>
           {/* 🌟 核心魔法：如果指针指向我，就在真实的子节点最上面，渲染一个输入框！ */}
           {creatingState.path === node.path && (
@@ -143,7 +139,6 @@ export default function Sidebar({
   activeFile,
   setActiveFile,
   fileList,  // 现在变成了从后端传来的 JSON 树
-  setFileList,
   handleCreateFile,
   handleDeleteFile
 }) {
