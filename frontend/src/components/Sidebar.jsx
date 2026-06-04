@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 // ChevronRight (向右箭头) 和 ChevronDown (向下箭头) 用于文件夹折叠
-import { FolderKanban, Plus, FileCode2, X, Trash2, ChevronRight, ChevronDown } from 'lucide-react';
+import { FolderKanban, Plus, X, Trash2, ChevronRight, ChevronDown } from 'lucide-react';
 import { getFileIcon } from '../utils/iconMap';
 
 /**
@@ -83,6 +83,7 @@ const FileTreeNode = React.memo(({
           {/* 🌟 核心魔法：如果指针指向我，就在真实的子节点最上面，渲染一个输入框！ */}
           {creatingState.path === node.path && (
             <div
+              key={`${node.path}-creating`}
               style={{ paddingLeft: `${(level + 1) * 12 + 16}px` }} // 比当前文件夹再深一层
               className="flex items-center gap-2.5 py-1.5 pr-4 text-sm"
             >
@@ -116,7 +117,7 @@ const FileTreeNode = React.memo(({
           {/* 递归渲染真实的后代节点 */}
           {node.children && node.children.map((childNode) => (
             <FileTreeNode
-              key={childNode.id}
+              key={childNode.path}
               node={childNode}
               level={level + 1}
               activeFile={activeFile}
@@ -239,7 +240,7 @@ export default function Sidebar({
       <div className="flex-1 overflow-y-auto py-1">
         {fileList.map((node) => (
           <FileTreeNode
-            key={node.id}
+            key={node.path}
             node={node}
             activeFile={activeFile}
             setActiveFile={setActiveFile}
