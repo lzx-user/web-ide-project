@@ -51,7 +51,7 @@ function ensureRoomDir(roomId) {
  * 所以这里负责校验房间参数，并确保房间目录存在。
  */
 function createRoomSession({ username, roomId }) {
-  const cleanUsername = String(username || '').trim();
+  const cleanUsername = String(username || '').trim(); 
   const cleanRoomId = String(roomId || '').trim();
 
   if (!cleanUsername || !cleanRoomId) {

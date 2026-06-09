@@ -34,6 +34,7 @@ router.post('/api/join', (req, res) => {
       roomId: session.roomId,
     });
 
+    // 返回数据给前端
     return res.json({
       success: true,
       message: '加入房间成功',
