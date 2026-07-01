@@ -10,6 +10,13 @@ const {
 } = require('../services/fileService');
 const { executeJavaScriptCode } = require('../services/codeService');
 
+const {
+  markUserOnline,
+  markUserOffline,
+  touchUser,
+  addRunRecord,
+} = require('../services/adminMemory')
+
 const ENABLE_TERMINAL = process.env.ENABLE_TERMINAL === 'true';
 
 /**
@@ -57,6 +64,12 @@ function registerWorkspaceSocket(io) {
     socket.join(roomId);
     console.log(`[房间 ${roomId}] 用户 ${username} 已连接 (Socket.io)`);
 
+    markUserOnline({ 
+      socketId: socket.id, 
+      username, 
+      roomId 
+    });
+
     // 确保当前房间的工作目录存在
     const roomDir = ensureRoomDir(roomId);
 
@@ -69,12 +82,6 @@ function registerWorkspaceSocket(io) {
      */
     socket.emit('initCodePackage', buildFileTree(roomDir));
 
-    /**
-     * 创建文件/文件夹
-     *
-     * 下面这段如果你原 index.js 里已经有更完整的“路径净化提示 isSanitized”逻辑，
-     * 请优先复制原来的，不要用这里覆盖。
-     */
     socket.on('createFile', ({ filename, isFolder }, callback) => {
       try {
         const result = createWorkspaceEntry(roomDir, filename, isFolder);
@@ -82,6 +89,7 @@ function registerWorkspaceSocket(io) {
         callback?.(result);
 
         if (result.success) {
+          touchUser(socket.id);
           io.to(roomId).emit('initCodePackage', buildFileTree(roomDir));
         }
       } catch (err) {
@@ -105,6 +113,7 @@ function registerWorkspaceSocket(io) {
         callback?.(result);
 
         if (result.success) {
+          touchUser(socket.id);
           io.to(roomId).emit('initCodePackage', buildFileTree(roomDir));
         }
       } catch (err) {
@@ -115,13 +124,9 @@ function registerWorkspaceSocket(io) {
       }
     });
 
-    /**
-     * 执行代码
-     *
-     * 这里保留你原来的 executeCode 事件名。
-     * 如果你原 index.js 里已经有更完整的执行逻辑，请把原逻辑搬过来。
-     */
-    socket.on('executeCode', ({ code }) => {
+    socket.on('executeCode', ({ code, filename }) => {
+      const startedAt = Date.now();
+
       try {
         io.to(roomId).emit('executionStarted');
 
@@ -136,6 +141,16 @@ function registerWorkspaceSocket(io) {
           },
           onFinish: (exitCode) => {
             io.to(roomId).emit('executionFinished', exitCode);
+
+            addRunRecord({
+              roomId,
+              username,
+              filename,
+              exitCode,
+              duration: Date.now() - startedAt,
+            });
+
+            touchUser(socket.id);
           },
         });
       } catch (err) {
@@ -171,7 +186,8 @@ function registerWorkspaceSocket(io) {
 
     socket.on('disconnect', () => {
       console.log(`[房间 ${roomId}] 用户 ${username} 已断开连接`);
-
+      markUserOffline(socket.id);
+      
       if (userPty) {
         userPty.destroy();
       }
