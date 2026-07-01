@@ -46,6 +46,12 @@ router.post('/api/save', authMiddleware, (req, res) => {
       return res.status(result.status || 400).json(result);
     }
 
+    console.log('[保存接口] 保存成功，准备写入保存记录：', {
+      roomId,
+      username: req.user.username,
+      filename,
+    });
+
     addSaveRecord({
       roomId,
       username: req.user.username,

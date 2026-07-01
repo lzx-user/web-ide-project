@@ -33,6 +33,18 @@ const HOST = process.env.HOST || 'localhost';
 // 生产环境：必须显式配置 CORS_ORIGIN，不能使用 *
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
 
+// 把 .env 里的 CORS_ORIGIN 转成数组
+// 为什么要这样写：
+// 1. 主 Web IDE 前端运行在 http://localhost:5173
+// 2. 管理后台前端运行在 http://localhost:5174
+// 3. 后端需要同时允许这两个前端访问，否则浏览器会因为 CORS 拦截请求
+function parseCorsOrigin(originText) {
+  return String(originText || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
 if (isProd && (!process.env.CORS_ORIGIN || process.env.CORS_ORIGIN === '*')) {
   throw new Error('生产环境必须配置具体的 CORS_ORIGIN，不能使用 *');
 }
@@ -47,7 +59,9 @@ module.exports = {
     host: HOST
   },
   cors: {
-    origin: CORS_ORIGIN
+    // 支持多个前端地址访问后端
+    // 例如：http://localhost:5173,http://localhost:5174
+    origin: parseCorsOrigin(CORS_ORIGIN),
   },
   env: {
     isProd: NODE_ENV === 'production',

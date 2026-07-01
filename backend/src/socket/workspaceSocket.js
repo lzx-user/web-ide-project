@@ -15,7 +15,7 @@ const {
   markUserOffline,
   touchUser,
   addRunRecord,
-} = require('../services/adminMemory')
+} = require('../services/adminMemory');
 
 const ENABLE_TERMINAL = process.env.ENABLE_TERMINAL === 'true';
 
@@ -64,10 +64,10 @@ function registerWorkspaceSocket(io) {
     socket.join(roomId);
     console.log(`[房间 ${roomId}] 用户 ${username} 已连接 (Socket.io)`);
 
-    markUserOnline({ 
-      socketId: socket.id, 
-      username, 
-      roomId 
+    markUserOnline({
+      socketId: socket.id,
+      username,
+      roomId,
     });
 
     // 确保当前房间的工作目录存在
@@ -127,6 +127,13 @@ function registerWorkspaceSocket(io) {
     socket.on('executeCode', ({ code, filename }) => {
       const startedAt = Date.now();
 
+      console.log('[Socket运行事件] 收到 executeCode：', {
+        roomId,
+        username,
+        filename,
+        codeLength: code?.length,
+      });
+
       try {
         io.to(roomId).emit('executionStarted');
 
@@ -140,6 +147,13 @@ function registerWorkspaceSocket(io) {
             io.to(roomId).emit('codeError', error);
           },
           onFinish: (exitCode) => {
+            console.log('[Socket运行事件] 执行完成：', {
+              roomId,
+              username,
+              filename,
+              exitCode,
+            });
+
             io.to(roomId).emit('executionFinished', exitCode);
 
             addRunRecord({
@@ -154,8 +168,18 @@ function registerWorkspaceSocket(io) {
           },
         });
       } catch (err) {
+        console.log('[Socket运行事件] 执行异常：', err.message);
+
         io.to(roomId).emit('codeError', `服务器内部异常: ${err.message}`);
         io.to(roomId).emit('executionFinished', 1);
+
+        addRunRecord({
+          roomId,
+          username,
+          filename,
+          exitCode: 1,
+          duration: Date.now() - startedAt,
+        });
       }
     });
 
@@ -187,7 +211,7 @@ function registerWorkspaceSocket(io) {
     socket.on('disconnect', () => {
       console.log(`[房间 ${roomId}] 用户 ${username} 已断开连接`);
       markUserOffline(socket.id);
-      
+
       if (userPty) {
         userPty.destroy();
       }
