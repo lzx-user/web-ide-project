@@ -42,7 +42,7 @@ function registerYjsServer(server) {
   server.on('upgrade', (request, socket, head) => {
     const url = request.url || '';
 
-    // Socket.io 的升级请求不要拦截，否则 Socket.io 会连不上
+    // Socket.io 自己处理 /socket.io 的 upgrade 请求，这里不要拦截它
     if (url.startsWith('/socket.io')) {
       return;
     }

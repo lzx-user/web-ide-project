@@ -4,6 +4,7 @@ const cors = require('cors');
 const config = require('../config');
 const roomRoutes = require('./routes/roomRoutes.js');
 const codeRoutes = require('./routes/codeRoutes.js');
+const adminRoutes = require('./routes/adminRoutes.js');
 
 /**
  * 创建 Express 应用实例
@@ -61,7 +62,7 @@ function createApp() {
    */
   app.use('/', roomRoutes);
   app.use('/', codeRoutes);
-
+  app.use('/', adminRoutes);
   return app;
 }
 

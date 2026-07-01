@@ -3,7 +3,7 @@ const router = require('express').Router();
 const authMiddleware = require('../middlewares/authMiddleware');
 const { ensureRoomDir } = require('../services/roomService');
 const { saveCodeToFile } = require('../services/codeService');
-
+const { addSaveRecord } = require('../services/adminMemory');
 /**
  * 接口：代码持久化保存
  *
@@ -45,6 +45,18 @@ router.post('/api/save', authMiddleware, (req, res) => {
     if (!result.success) {
       return res.status(result.status || 400).json(result);
     }
+
+    console.log('[保存接口] 保存成功，准备写入保存记录：', {
+      roomId,
+      username: req.user.username,
+      filename,
+    });
+
+    addSaveRecord({
+      roomId,
+      username: req.user.username,
+      filename,
+    });
 
     return res.json(result);
   } catch (err) {
