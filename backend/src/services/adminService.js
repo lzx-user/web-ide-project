@@ -8,9 +8,29 @@ const {
   getSaveRecords,
 } = require('./adminMemory');
 
-function formatTime(date) {
+function formatTime(date = new Date()) {
   if (!date) return '-';
-  return new Date(date).toISOString().slice(0, 19).replace('T', ' ');
+
+  const targetDate = new Date(date);
+
+  const formatter = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(targetDate);
+
+  const getPart = (type) => {
+    return parts.find((item) => item.type === type)?.value;
+  };
+
+  return `${getPart('year')}-${getPart('month')}-${getPart('day')} ${getPart('hour')}:${getPart('minute')}:${getPart('second')}`;
 }
 
 function formatSize(bytes) {
@@ -121,7 +141,7 @@ function getFiles() {
 }
 
 function isToday(timeText) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = formatTime().slice(0, 10);
   return String(timeText || '').startsWith(today);
 }
 
