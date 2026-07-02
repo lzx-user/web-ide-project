@@ -2,3 +2,9 @@ node_modules/
 temp/
 .env
 .env.*
+
+# SQLite 数据库文件
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
