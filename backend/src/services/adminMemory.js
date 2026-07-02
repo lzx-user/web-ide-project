@@ -1,86 +1,26 @@
-const fs = require('fs');
-const path = require('path');
+const {
+  initAdminDb,
+  addRunRecordToDb,
+  addSaveRecordToDb,
+  getRunRecordsFromDb,
+  getSaveRecordsFromDb,
+} = require('./adminDb');
 
-// 这个文件用来保存管理后台需要的运行时数据
-// 优化版：在线用户仍然存在内存中，运行记录和保存记录持久化到 JSON 文件中
-// 这样后端重启后，运行记录 / 保存记录不会丢失
+/**
+ * 管理后台运行时数据模块
+ *
+ * 改造说明：
+ * 1. 在线用户 onlineUsers 继续使用 Map 保存，因为它是实时状态。
+ * 2. 运行记录 runRecords 改为写入 SQLite 数据库。
+ * 3. 保存记录 saveRecords 改为写入 SQLite 数据库。
+ * 4. 对外暴露的函数名保持不变，避免 workspaceSocket / codeRoutes / adminService 大面积修改。
+ */
+
+// 启动时初始化 SQLite 表
+initAdminDb();
 
 const onlineUsers = new Map();
 const socketUserMap = new Map();
-
-// 持久化文件路径：放在 backend/temp/admin-records.json
-// 你的 npm run dev 已经忽略 temp 目录，所以写入这个文件不会触发 nodemon 重启
-const DATA_FILE = path.join(__dirname, '../../temp/admin-records.json');
-
-function ensureDataFile() {
-  const dataDir = path.dirname(DATA_FILE);
-
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-
-  if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(
-      DATA_FILE,
-      JSON.stringify(
-        {
-          runRecords: [],
-          saveRecords: [],
-        },
-        null,
-        2
-      ),
-      'utf8'
-    );
-  }
-}
-
-function loadPersistedData() {
-  try {
-    ensureDataFile();
-
-    const raw = fs.readFileSync(DATA_FILE, 'utf8');
-    const data = JSON.parse(raw || '{}');
-
-    return {
-      runRecords: Array.isArray(data.runRecords) ? data.runRecords : [],
-      saveRecords: Array.isArray(data.saveRecords) ? data.saveRecords : [],
-    };
-  } catch (err) {
-    console.log('[管理后台持久化] 读取记录失败，使用空数据：', err.message);
-
-    return {
-      runRecords: [],
-      saveRecords: [],
-    };
-  }
-}
-
-function persistData() {
-  try {
-    ensureDataFile();
-
-    fs.writeFileSync(
-      DATA_FILE,
-      JSON.stringify(
-        {
-          runRecords,
-          saveRecords,
-        },
-        null,
-        2
-      ),
-      'utf8'
-    );
-  } catch (err) {
-    console.log('[管理后台持久化] 写入记录失败：', err.message);
-  }
-}
-
-const persistedData = loadPersistedData();
-
-const runRecords = persistedData.runRecords;
-const saveRecords = persistedData.saveRecords;
 
 function formatTime(date = new Date()) {
   const targetDate = new Date(date);
@@ -103,10 +43,6 @@ function formatTime(date = new Date()) {
   };
 
   return `${getPart('year')}-${getPart('month')}-${getPart('day')} ${getPart('hour')}:${getPart('minute')}:${getPart('second')}`;
-}
-
-function createRecordId() {
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function markUserOnline({ socketId, username, roomId }) {
@@ -170,51 +106,29 @@ function touchUser(socketId) {
 }
 
 function addRunRecord({ roomId, username, filename, exitCode, duration }) {
-  const finalExitCode = Number(exitCode);
-
-  const record = {
-    id: createRecordId(),
-    roomId,
-    username,
-    filename: filename || '临时代码',
-    language: 'JavaScript',
-    status: finalExitCode === 0 ? 'success' : 'failed',
-    exitCode: Number.isNaN(finalExitCode) ? exitCode : finalExitCode,
-    duration: `${(duration / 1000).toFixed(2)}s`,
-    runTime: formatTime(),
-  };
-
-  runRecords.unshift(record);
-
-  if (runRecords.length > 200) {
-    runRecords.pop();
-  }
-
-  persistData();
-
-  console.log('[管理后台运行记录] 已写入：', record);
-  console.log('[管理后台运行记录] 当前总数：', runRecords.length);
-}
-
-function addSaveRecord({ roomId, username, filename }) {
-  const record = {
-    id: createRecordId(),
+  const record = addRunRecordToDb({
     roomId,
     username,
     filename,
-    saveTime: formatTime(),
-  };
+    exitCode,
+    duration,
+  });
 
-  saveRecords.unshift(record);
+  console.log('[管理后台运行记录] 已写入 SQLite：', record);
 
-  if (saveRecords.length > 200) {
-    saveRecords.pop();
-  }
+  return record;
+}
 
-  persistData();
+function addSaveRecord({ roomId, username, filename }) {
+  const record = addSaveRecordToDb({
+    roomId,
+    username,
+    filename,
+  });
 
-  console.log('[管理后台保存记录] 已写入：', record);
-  console.log('[管理后台保存记录] 当前总数：', saveRecords.length);
+  console.log('[管理后台保存记录] 已写入 SQLite：', record);
+
+  return record;
 }
 
 function getOnlineUsers() {
@@ -222,11 +136,11 @@ function getOnlineUsers() {
 }
 
 function getRunRecords() {
-  return runRecords;
+  return getRunRecordsFromDb();
 }
 
 function getSaveRecords() {
-  return saveRecords;
+  return getSaveRecordsFromDb();
 }
 
 module.exports = {

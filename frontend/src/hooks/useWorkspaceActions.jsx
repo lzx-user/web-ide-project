@@ -155,7 +155,11 @@ export default function useWorkspaceActions({
 
     // 通过 Socket 向后端发送执行请求，携带当前代码和文件名
     if (currentSocket) {
-      currentSocket.emit('executeCode', { roomId, code });
+      currentSocket.emit('executeCode', { 
+        roomId, 
+        code,
+        filename: activeFile, 
+      });
     }
   };
 
