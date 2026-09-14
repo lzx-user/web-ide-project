@@ -1,4 +1,5 @@
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useState } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import useIDEStore from "../store/useIDEStore";
 import { STORAGE_KEYS } from "../utils/constants";
 // Yjs 核心三剑客
@@ -6,7 +7,20 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 // 引入原生的 IndexedDB 离线持久化工具
 import { IndexeddbPersistence } from 'y-indexeddb';
-import type { FileNode } from '../types/ide';
+import type { FileNode, WorkspaceSocket } from '../types/ide';
+
+type UseWorkspaceSocketOptions = {
+  currentSocket: WorkspaceSocket | null;
+  roomId: string;
+  hasInitializedRef: MutableRefObject<boolean>;
+  setIsRunning: Dispatch<SetStateAction<boolean>>;
+  clearPersistedState: () => void;
+};
+
+type YjsState = {
+  ydoc: Y.Doc | null;
+  provider: WebsocketProvider | null;
+};
 
 /**
  * 核心自定义 Hook：接管工作区所有的 WebSocket 通信与底层协同逻辑
@@ -21,21 +35,15 @@ export default function useWorkspaceSocket({
   roomId,
   hasInitializedRef, // 防断线重连覆盖锁
   setIsRunning,
-  clearPersistedState  // 持久化缓存清理函数
-}) {
+  clearPersistedState, // 持久化缓存清理函数
+}: UseWorkspaceSocketOptions) {
   const setFileList = useIDEStore((state) => state.setFileList);
   const setActiveFile = useIDEStore((state) => state.setActiveFile);
   const isJoined = useIDEStore((state) => state.isJoined);
   const setJoined = useIDEStore((state) => state.setJoined);
   const [isConnected, setIsConnected] = useState(false);
   const [isWakingUp, setIsWakingUp] = useState(false); // 核心状态：标记后端是否在冷启动
-  const [yjsState, setYjsState] = useReducer(
-    (state, nextState) => ({ ...state, ...nextState }),
-    {
-      ydoc: null,
-      provider: null,
-    }
-  )
+  const [yjsState, setYjsState] = useState<YjsState>({ ydoc: null, provider: null });
   // 1. Yjs数据面的初始化
   useEffect(() => {
     // 只有在用户成功加入房间后，才启动数据同步隧道
@@ -92,7 +100,7 @@ export default function useWorkspaceSocket({
 
     // 终端执行相关事件
     // 当进程执行完毕，不仅要打日志，还要把运行状态解锁，允许用户再次点击运行
-    const handleFinish = (exitCode) => {
+    const handleFinish = (exitCode: number) => {
       useIDEStore.getState().addOutputLog('info', `\n[进程执行完毕，退出码 ${exitCode}]`);
       setIsRunning(false);
     };
@@ -100,21 +108,22 @@ export default function useWorkspaceSocket({
     // 点击运行时，自动切到 output 面板并清空旧日志 
     const handleExecutionStarted = () => {
       setIsRunning(true);
-      // 直接调用 Store 的方法
+      // 展开的是运行输出面板，不会开启受 ENABLE_TERMINAL 保护的交互式终端。
+      useIDEStore.getState().setIsTerminalOpen(true);
       useIDEStore.getState().setBottomTab('output');
       useIDEStore.getState().clearOutputLogs();
     };
 
     // 新增针对独立执行通道的事件处理
-    const handleCodeOutput = (data) => {
+    const handleCodeOutput = (data: string) => {
       useIDEStore.getState().addOutputLog('info', data);
     };
-    const handleCodeError = (data) => {
+    const handleCodeError = (data: string) => {
       useIDEStore.getState().addOutputLog('error', data);
     };
 
     // 现在这个方法全权接管了文件的 初始化、新建、删除 的 UI 更新
-    const handleInitCodePackage = (codeTree) => {
+    const handleInitCodePackage = (codeTree: FileNode[]) => {
       // 1. 文件树永远可以更新，因为队友新建/删除文件也需要同步到侧边栏
       setFileList(codeTree);
 

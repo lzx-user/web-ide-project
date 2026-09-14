@@ -1,8 +1,26 @@
 import { useEffect } from 'react';
+import type { MutableRefObject } from 'react';
 import { MonacoBinding } from 'y-monaco';
+import type { OnMount } from '@monaco-editor/react';
+import type { WebsocketProvider } from 'y-websocket';
+import type * as Y from 'yjs';
 import useIDEStore from '../store/useIDEStore';
 import { STORAGE_KEYS } from '../utils/constants';
 import { getLanguageByFilename } from '../utils/editorLanguage';
+import type { EditorCacheEntry } from '../types/ide';
+
+type EditorBindingOptions = {
+  editorRef: MutableRefObject<Parameters<OnMount>[0] | null>;
+  monacoRef: MutableRefObject<Parameters<OnMount>[1] | null>;
+  fileCacheMap: MutableRefObject<Map<string, EditorCacheEntry>>;
+  prevFileRef: MutableRefObject<string | null>;
+  bindingRef: MutableRefObject<MonacoBinding | null>;
+  activeFile: string;
+  isActiveFile: boolean;
+  ydoc: Y.Doc | null;
+  provider: WebsocketProvider | null;
+  isEditorMounted: boolean;
+};
 
 // Monaco + Yjs 文件绑定
 export default function useEditorBinding({
@@ -16,7 +34,7 @@ export default function useEditorBinding({
   ydoc,
   provider,
   isEditorMounted,
-}) {
+}: EditorBindingOptions) {
   // 监听切换文件: 解绑旧文件，绑定新文件
   useEffect(() => {
     const editor = editorRef.current;
@@ -39,8 +57,10 @@ export default function useEditorBinding({
     localStorage.setItem(STORAGE_KEYS.ACTIVE_FILE, targetFile);  // 每次文件真正切换时，存入本地记忆
 
     // 1. 整理旧现场：保存上一个文件的光标视图，并撕掉旧胶水
-    if (prevFileRef.current && fileCacheMap.current.has(prevFileRef.current)) {
-      fileCacheMap.current.get(prevFileRef.current).viewState = editor.saveViewState();
+    if (prevFileRef.current) {
+      const previousCache = fileCacheMap.current.get(prevFileRef.current);
+      // Map.get 仍可能返回 undefined，因此先收窄类型再更新视图状态。
+      if (previousCache) previousCache.viewState = editor.saveViewState();
     }
 
     // 撕掉旧文件的 Yjs 绑定，防止你在 index.js 里打字，却同步到了上一个文件里

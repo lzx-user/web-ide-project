@@ -5,17 +5,21 @@ import { FitAddon } from 'xterm-addon-fit'; // 引入官方自适应插件
 import { Eraser } from 'lucide-react';
 import 'xterm/css/xterm.css';
 import type { WorkspaceSocket } from '../types/ide';
+import useIDEStore from '../store/useIDEStore';
 
 // 接收 App 传下来的 currentSocket
 export default function XTerminal({ currentSocket }: { currentSocket: WorkspaceSocket }) {
   const terminalRef = useRef<HTMLDivElement | null>(null); // 指向 DOM 容器
   const termRef = useRef<Terminal | null>(null); // 用于缓存 terminal 实例
+  const appendTerminalOutput = useIDEStore((state) => state.appendTerminalOutput);
+  const clearTerminalOutput = useIDEStore((state) => state.clearTerminalOutput);
 
   // 终端清屏功能
   const handleClear = () => {
     // 安全检查：确保终端已经被创建出来了再去清空
     if (termRef.current) {
       termRef.current.clear();
+      clearTerminalOutput();
     }
   };
 
@@ -131,6 +135,7 @@ export default function XTerminal({ currentSocket }: { currentSocket: WorkspaceS
     // 接收后端进程输出 -> 写入前端终端
     const handleOutput = (data) => {
       term.write(data);
+      appendTerminalOutput(data);
     };
     currentSocket.on('terminal-out', handleOutput);
 
@@ -139,7 +144,7 @@ export default function XTerminal({ currentSocket }: { currentSocket: WorkspaceS
       disposable.dispose(); // 清除键盘事件监听
       currentSocket.off('terminal-out', handleOutput);
     };
-  }, [currentSocket]); // 只有 Socket 变化时才重新绑定通信
+  }, [currentSocket, appendTerminalOutput]); // 只有 Socket 变化时才重新绑定通信
 
   // overflow-hidden 防止终端计算尺寸时撑爆父容器
   // 4. 渲染带悬浮按钮的 UI

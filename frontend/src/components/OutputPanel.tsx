@@ -7,10 +7,10 @@ export default function OutputPanel() {
 
   return (
     // 容器样式：占满父级、白色背景、允许垂直滚动
-    <div className="h-full w-full bg-white overflow-y-auto p-4 font-mono text-sm leading-relaxed text-gray-700">
+    <div className="h-full w-full overflow-y-auto bg-slate-950 p-4 font-mono text-sm leading-relaxed text-slate-200">
       {/* 2. 条件渲染：如果没有日志，显示提示语 */}
       {outputLogs.length === 0 ? (
-        <div className='text-gray-400 italic'>等待代码运行...</div>
+        <div className='italic text-slate-500'>&gt; 等待代码运行...</div>
       ) : (
         /* 3. 列表渲染：遍历日志数组 */
         outputLogs.map((log) => (

@@ -17,6 +17,12 @@ export type OutputLog = {
   text: string;
 };
 
+// 状态栏只需要展示当前光标位置，因此把行列收敛成一个小而明确的类型。
+export type CursorPosition = {
+  line: number;
+  column: number;
+};
+
 export type SocketActionResult = {
   success: boolean;
   msg?: string;
@@ -65,6 +71,7 @@ export type IDEStore = {
   bottomTab: BottomTab;
   outputLogs: OutputLog[];
   isTerminalOpen: boolean;
+  terminalOutput: string;
   setBottomTab: (tab: BottomTab) => void;
   addOutputLog: (type: OutputLogType, text: string) => void;
   clearOutputLogs: () => void;
@@ -76,4 +83,6 @@ export type IDEStore = {
   setSocket: (socket: WorkspaceSocket | null) => void;
   setActiveFile: (filename: string) => void;
   setUsername: (username: string) => void;
+  appendTerminalOutput: (text: string) => void;
+  clearTerminalOutput: () => void;
 };

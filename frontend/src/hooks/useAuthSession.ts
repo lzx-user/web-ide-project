@@ -14,6 +14,7 @@ export default function useAuthSession() {
   const setRoomId = useIDEStore((state) => state.setRoomId);
   const setActiveFile = useIDEStore((state) => state.setActiveFile);
   const setCurrentSocket = useIDEStore((state) => state.setSocket);
+  const setUsername = useIDEStore((state) => state.setUsername);
 
   // 清除持久化状态的函数
   const clearPersistedState = useCallback(() => {
@@ -42,6 +43,8 @@ export default function useAuthSession() {
 
           // 更新 Zustand 全局状态
           setRoomId(roomIdInput);
+          // 昵称只写入内存状态，供 Yjs Awareness 展示真实成员，不改变现有持久化键。
+          setUsername(usernameInput);
 
           // 3. 使用获取到的Token和房间号建立WebSocket连接
           const s = connectSocket(roomIdInput, data.token);
@@ -57,7 +60,7 @@ export default function useAuthSession() {
         toast.error('系统错误: 无法建立连接');
       }
     },
-    [setRoomId, setCurrentSocket, setJoined]
+    [setRoomId, setCurrentSocket, setJoined, setUsername]
   );
 
   // 退出房间

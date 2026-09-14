@@ -3,6 +3,7 @@ import express from 'express';
 
 import config from '../config.js';
 import codeRoutes from './routes/codeRoutes.js';
+import aiRoutes from './routes/aiRoutes.js';
 import roomRoutes from './routes/roomRoutes.js';
 
 /** 创建 Express 应用。这里只挂载 Web IDE 的核心接口。 */
@@ -28,6 +29,7 @@ export default function createApp() {
 
   app.use('/', roomRoutes);
   app.use('/', codeRoutes);
+  app.use('/', aiRoutes);
 
   // 后台管理路由已移除。房间、保存、Socket.io 和 Yjs 不受影响。
   return app;

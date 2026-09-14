@@ -40,6 +40,12 @@ const config = {
     isProd,
     current: currentEnv,
   },
+  ai: {
+    apiKey: process.env.AI_API_KEY,
+    baseUrl: process.env.AI_BASE_URL ?? 'https://api.openai.com/v1',
+    model: process.env.AI_MODEL ?? 'gpt-4.1-mini',
+    timeoutMs: Number(process.env.AI_TIMEOUT_MS ?? 45_000),
+  },
 } as const;
 
 export default config;

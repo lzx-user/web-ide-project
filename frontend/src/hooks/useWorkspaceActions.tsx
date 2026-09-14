@@ -1,8 +1,22 @@
 import { useState } from 'react';
+import type { MutableRefObject } from 'react';
+import type { OnMount } from '@monaco-editor/react';
 import toast from 'react-hot-toast';
 import request from '../services/request';
 import { STORAGE_KEYS } from '../utils/constants';
 import { getLanguageByFilename } from '../utils/editorLanguage';
+import type { EditorCacheEntry, WorkspaceSocket } from '../types/ide';
+
+type WorkspaceActionsOptions = {
+  currentSocket: WorkspaceSocket | null;
+  roomId: string;
+  activeFile: string;
+  isActiveFile: boolean;
+  editorRef: MutableRefObject<Parameters<OnMount>[0] | null>;
+  fileCacheMap: MutableRefObject<Map<string, EditorCacheEntry>>;
+  setActiveFile: (filename: string) => void;
+};
+
 // 创建、删除、保存、运行
 export default function useWorkspaceActions({
   currentSocket,
@@ -12,12 +26,12 @@ export default function useWorkspaceActions({
   editorRef,
   fileCacheMap,
   setActiveFile,
-}) {
+}: WorkspaceActionsOptions) {
   const [isSaving, setIsSaving] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
 
   // 创建文件逻辑 只管emit事件，具体文件创建和同步逻辑由后端处理
-  const handleCreateFile = ({ path, isFolder }) => {
+  const handleCreateFile = ({ path, isFolder }: { path: string; isFolder: boolean }) => {
     if (!currentSocket) {
       toast.error('Socket 未连接， 无法创建');
       return;
@@ -75,7 +89,7 @@ export default function useWorkspaceActions({
   };
 
   // 删除文件逻辑
-  const handleDeleteFile = (filename) => {
+  const handleDeleteFile = (filename: string) => {
     // 拦截确认，防止手滑误删
     if (!window.confirm(`确定要删除${filename}`)) return;
 
@@ -137,8 +151,9 @@ export default function useWorkspaceActions({
       });
 
       toast.success('保存成功', { id: loadingToast });
-    } catch (err) {
-      toast.error(`保存失败: ${err.message}`, { id: loadingToast });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '未知错误';
+      toast.error(`保存失败: ${message}`, { id: loadingToast });
     } finally {
       setIsSaving(false);
     }
@@ -155,11 +170,7 @@ export default function useWorkspaceActions({
 
     // 通过 Socket 向后端发送执行请求，携带当前代码和文件名
     if (currentSocket) {
-      currentSocket.emit('executeCode', { 
-        roomId, 
-        code,
-        filename: activeFile, 
-      });
+      currentSocket.emit('executeCode', { code, filename: activeFile });
     }
   };
 

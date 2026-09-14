@@ -12,7 +12,8 @@ const useIDEStore = create<IDEStore>((set) => ({
   fileList: [],
   bottomTab: 'terminal',
   outputLogs: [],
-  isTerminalOpen: false,
+  isTerminalOpen: true,
+  terminalOutput: '',
 
   setBottomTab: (bottomTab) => set({ bottomTab }),
   addOutputLog: (type, text) =>
@@ -29,6 +30,10 @@ const useIDEStore = create<IDEStore>((set) => ({
   setSocket: (socket) => set({ socket }),
   setActiveFile: (activeFile) => set({ activeFile }),
   setUsername: (username) => set({ username }),
+  appendTerminalOutput: (text) => set((state) => ({
+    terminalOutput: `${state.terminalOutput}${text}`.slice(-20000),
+  })),
+  clearTerminalOutput: () => set({ terminalOutput: '' }),
 }));
 
 export default useIDEStore;
