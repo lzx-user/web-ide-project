@@ -5,6 +5,8 @@ type HeaderProps = {
   roomId: string;
   activeFile: string;
   isConnected: boolean;
+  isYjsConnected: boolean;
+  isYjsSynced: boolean;
   isRunning: boolean;
   onRun: () => void;
   onSave: () => void;
@@ -13,6 +15,9 @@ type HeaderProps = {
   isAIOpen: boolean;
   onToggleAI: () => void;
   members: string[];
+  isDirty: boolean;
+  savedAt: string | null;
+  aiEnabled: boolean;
 };
 
 /** 顶部只展示连接和操作状态，真正的保存/运行逻辑仍由 App 传入。 */
@@ -20,6 +25,8 @@ export default function Header({
   roomId,
   activeFile,
   isConnected,
+  isYjsConnected,
+  isYjsSynced,
   isRunning,
   onRun,
   onSave,
@@ -28,6 +35,9 @@ export default function Header({
   isAIOpen,
   onToggleAI,
   members,
+  isDirty,
+  savedAt,
+  aiEnabled,
 }: HeaderProps) {
   const isTerminalOpen = useIDEStore((state) => state.isTerminalOpen);
   const toggleTerminal = useIDEStore((state) => state.toggleTerminal);
@@ -40,7 +50,7 @@ export default function Header({
           <div className="brand-mark"><Code2 size={22} /></div>
           <div>
             <div className="text-base">Web IDE</div>
-            <div className="text-[10px] font-medium text-slate-400">实时协作 · AI 开发</div>
+            <div className="text-[10px] font-medium text-slate-400">CRDT 实时协作</div>
           </div>
         </div>
         <div className="hidden h-8 w-px bg-slate-200 lg:block" />
@@ -49,9 +59,9 @@ export default function Header({
           <span className="max-w-40 truncate text-sm font-semibold text-slate-700">{roomId}</span>
           <ChevronDown size={14} className="shrink-0 text-slate-400" />
         </button>
-        <div className="workspace-status hidden xl:inline-flex">
+        <div className="workspace-status hidden xl:inline-flex" title={`控制通道：${isConnected ? '已连接' : '重连中'}；Yjs：${isYjsConnected ? (isYjsSynced ? '已同步' : '同步中') : '离线'}`}>
           <span className={`workspace-status-dot ${isConnected ? '' : '!bg-amber-400'}`} />
-          {isConnected ? '实时协作已连接' : '正在连接'}
+          {!isConnected || !isYjsConnected ? '离线草稿，等待同步' : isYjsSynced ? '协同已同步' : '正在同步'}
         </div>
         <div className="hidden items-center gap-2 xl:flex" aria-label={`在线成员 ${members.length} 人`}>
           <div className="flex -space-x-2">
@@ -67,9 +77,9 @@ export default function Header({
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
-        <button type="button" onClick={onToggleAI} className={`workspace-action ${isAIOpen ? 'workspace-action-primary' : ''}`} aria-label="打开或关闭 AI 助手">
+        {aiEnabled ? <button type="button" onClick={onToggleAI} className={`workspace-action ${isAIOpen ? 'workspace-action-primary' : ''}`} aria-label="打开或关闭 AI 助手">
           <Bot size={16} /><span className="hidden lg:inline">AI 助手</span>
-        </button>
+        </button> : null}
         <button type="button" onClick={toggleTerminal} className={`workspace-action ${isTerminalOpen ? 'border-blue-200 bg-blue-50 text-blue-700' : ''}`}>
           <Terminal size={16} /><span className="hidden xl:inline">终端</span>
         </button>
@@ -77,7 +87,7 @@ export default function Header({
           <Save size={16} className={isSaving ? 'animate-pulse text-blue-500' : ''} />
           <span className="hidden lg:inline">{isSaving ? '保存中' : '保存'}</span>
         </button>
-        <button type="button" onClick={onRun} disabled={!hasActiveFile || isRunning || isSaving} className="workspace-action workspace-action-run">
+        <button type="button" onClick={onRun} disabled={import.meta.env.VITE_ENABLE_CODE_EXECUTION !== 'true' || !hasActiveFile || isRunning || isSaving} title={import.meta.env.VITE_ENABLE_CODE_EXECUTION === 'true' ? '运行当前文件' : '演示环境已关闭代码执行'} className="workspace-action workspace-action-run">
           <Play size={16} className={isRunning ? 'animate-pulse' : ''} />
           <span className="hidden lg:inline">{isRunning ? '运行中' : '运行'}</span>
         </button>
@@ -85,6 +95,7 @@ export default function Header({
           <LogOut size={16} /><span className="hidden 2xl:inline">退出房间</span>
         </button>
       </div>
+      <span className="sr-only">{isDirty ? '有未持久化修改' : savedAt ? `上次保存 ${savedAt}` : '尚未手动保存'}</span>
     </header>
   );
 }

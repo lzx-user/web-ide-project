@@ -2,10 +2,12 @@ import type { editor } from 'monaco-editor';
 import type { Socket } from 'socket.io-client';
 
 export type FileNode = {
+  id: string;
   name: string;
   path: string;
   type: 'file' | 'folder';
   children?: FileNode[];
+  documentKey?: string;
 };
 
 export type BottomTab = 'terminal' | 'output';
@@ -29,6 +31,7 @@ export type SocketActionResult = {
   cleaned?: string;
   original?: string;
   isSanitized?: boolean;
+  deletedPaths?: string[];
 };
 
 export interface ServerToClientEvents {
@@ -37,6 +40,7 @@ export interface ServerToClientEvents {
   codeOutput: (output: string) => void;
   codeError: (error: string) => void;
   executionFinished: (exitCode: number) => void;
+  workspaceError: (message: string) => void;
   'terminal-out': (data: string) => void;
 }
 
@@ -72,6 +76,9 @@ export type IDEStore = {
   outputLogs: OutputLog[];
   isTerminalOpen: boolean;
   terminalOutput: string;
+  isDirty: boolean;
+  savedAt: string | null;
+  saveError: string;
   setBottomTab: (tab: BottomTab) => void;
   addOutputLog: (type: OutputLogType, text: string) => void;
   clearOutputLogs: () => void;
@@ -85,4 +92,6 @@ export type IDEStore = {
   setUsername: (username: string) => void;
   appendTerminalOutput: (text: string) => void;
   clearTerminalOutput: () => void;
+  setDirty: (dirty: boolean) => void;
+  setSaveResult: (savedAt: string | null, error?: string) => void;
 };

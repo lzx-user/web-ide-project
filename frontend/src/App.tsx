@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import toast, { Toaster } from 'react-hot-toast';
 import type { OnMount } from '@monaco-editor/react';
 import Login from './components/Login';
@@ -45,6 +45,7 @@ function App() {
 
   // 用来存放 Yjs 和 Monaco 之间 胶水 容器
   const bindingRef = useRef<MonacoBinding | null>(null);
+  const editorDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
 
   const [isEditorMounted, setIsEditorMounted] = useState(false); // 新增：记录编辑器是否挂载完毕
   const [cursorPosition, setCursorPosition] = useState<CursorPosition>({ line: 1, column: 1 });
@@ -80,7 +81,7 @@ function App() {
   });
 
   // 接收 Yjs 实例，并且删掉 setCurrentCode 传参
-  const { ydoc, provider, isConnected, isWakingUp } = useWorkspaceSocket({
+  const { ydoc, provider, isConnected, isYjsConnected, isYjsSynced, isWakingUp } = useWorkspaceSocket({
     currentSocket,
     roomId,
     hasInitializedRef,
@@ -95,6 +96,7 @@ function App() {
     prevFileRef,
     bindingRef,
     activeFile,
+    activeDocumentKey: activeNode?.documentKey,
     isActiveFile,
     ydoc,
     provider,
@@ -165,19 +167,46 @@ function App() {
     editorRef.current = editor; // 将实例装进 ref 容器
     monacoRef.current = monaco; // 记录 monaco 核心对象，一会创建 Model 时会用到
     setIsEditorMounted(true);  // 新增：触发组件重绘
-    editor.onDidChangeCursorSelection(({ selection }) => {
+    editorDisposablesRef.current.push(editor.onDidChangeCursorSelection(({ selection }) => {
       setSelectionLabel(
         selection.isEmpty()
           ? '未选择代码'
           : `第 ${selection.startLineNumber}-${selection.endLineNumber} 行`,
       );
-    });
+    }));
     // 光标位置来自 Monaco，因此状态栏能反映真实的行列，而不是静态占位值。
-    editor.onDidChangeCursorPosition(({ position }) => {
+    editorDisposablesRef.current.push(editor.onDidChangeCursorPosition(({ position }) => {
       setCursorPosition({ line: position.lineNumber, column: position.column });
-    });
+    }));
     console.log('Monaco Editor 挂载成功，准备绑定文件...');
   };
+
+  useEffect(() => () => {
+    editorDisposablesRef.current.forEach((disposable) => disposable.dispose());
+    editorDisposablesRef.current = [];
+    bindingRef.current?.destroy();
+    fileCacheMap.current.forEach(({ model }) => model.dispose());
+    fileCacheMap.current.clear();
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        void handleSave();
+      }
+    };
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!useIDEStore.getState().isDirty) return;
+      event.preventDefault();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [handleSave]);
 
 
   if (!isJoined) {
@@ -201,6 +230,8 @@ function App() {
         fileList={fileList}
         isActiveFile={isActiveFile}
         isConnected={isConnected}
+        isYjsConnected={isYjsConnected}
+        isYjsSynced={isYjsSynced}
         isWakingUp={isWakingUp}
         isSaving={isSaving}
         isRunning={isRunning}

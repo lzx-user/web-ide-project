@@ -22,16 +22,18 @@ export default function useAuthSession() {
     localStorage.removeItem(STORAGE_KEYS.ROOM_ID);
     localStorage.removeItem(STORAGE_KEYS.IS_JOINED);
     localStorage.removeItem(STORAGE_KEYS.ACTIVE_FILE);
+    localStorage.removeItem(STORAGE_KEYS.USERNAME);
   }, []);
 
   // 登录/加入房间流程
   const handleJoinRoom = useCallback(
-    async (usernameInput, roomIdInput) => {
+    async (usernameInput: string, roomIdInput: string, accessCodeInput: string) => {
       try {
         // 1. 调用 /api/join 后端接口，获取JWT Token
         const { data } = await request.post('/join', {
           username: usernameInput,
           roomId: roomIdInput,
+          accessCode: accessCodeInput,
         });
 
         if (data.success) {
@@ -45,6 +47,7 @@ export default function useAuthSession() {
           setRoomId(roomIdInput);
           // 昵称只写入内存状态，供 Yjs Awareness 展示真实成员，不改变现有持久化键。
           setUsername(usernameInput);
+          localStorage.setItem(STORAGE_KEYS.USERNAME, usernameInput);
 
           // 3. 使用获取到的Token和房间号建立WebSocket连接
           const s = connectSocket(roomIdInput, data.token);
@@ -56,8 +59,9 @@ export default function useAuthSession() {
           alert(data.message);
         }
       } catch (err) {
-        console.log('加入房间失败:', err.message);
-        toast.error('系统错误: 无法建立连接');
+        const message = err instanceof Error ? err.message : '无法建立连接';
+        console.log('加入房间失败:', message);
+        toast.error('加入失败，请检查房间 ID 和访问口令');
       }
     },
     [setRoomId, setCurrentSocket, setJoined, setUsername]
@@ -95,6 +99,7 @@ export default function useAuthSession() {
     // 如果有持久化状态且token有效，自动恢复登陆状态
     if (savedToken && savedRoomId && savedIsJoined) {
       setRoomId(savedRoomId);
+      setUsername(localStorage.getItem(STORAGE_KEYS.USERNAME) ?? '协作者');
       setJoined(true);
 
       // 读取上次离开前正在看的文件
@@ -107,7 +112,7 @@ export default function useAuthSession() {
       const s = connectSocket(savedRoomId, savedToken);
       setCurrentSocket(s);
     }
-  }, [setRoomId, setJoined, setActiveFile, setCurrentSocket]);
+  }, [setRoomId, setJoined, setActiveFile, setCurrentSocket, setUsername]);
 
   return {
     roomId,

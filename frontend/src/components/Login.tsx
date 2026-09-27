@@ -12,17 +12,18 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react';
+import request from '../services/request';
 
 type LoginProps = {
-  onJoinRoom: (username: string, roomId: string) => Promise<void> | void;
+  onJoinRoom: (username: string, roomId: string, accessCode: string) => Promise<void> | void;
   initialRoomId?: string;
 };
 
 const features = [
   { icon: Users, title: '多人协作', description: '实时同步，高效协同' },
-  { icon: Sparkles, title: 'AI 编程助手', description: '智能补全，生成代码' },
-  { icon: Cloud, title: '云端运行', description: '一键运行，即时预览' },
-  { icon: LockKeyhole, title: '安全存储', description: '数据加密，隐私保护' },
+  { icon: Sparkles, title: 'AI 辅助', description: '可配置、需确认后应用' },
+  { icon: Cloud, title: '断线恢复', description: '本地草稿，重连后合并' },
+  { icon: LockKeyhole, title: '访问控制', description: '房间口令与统一鉴权' },
 ];
 
 function IDEPreview() {
@@ -31,7 +32,7 @@ function IDEPreview() {
       <div className="ide-preview-toolbar">
         <span className="flex items-center gap-2"><Code2 size={13} className="text-blue-600" />资源管理器</span>
         <span className="ide-preview-tab">JS&nbsp;&nbsp; index.js&nbsp;&nbsp; ×</span>
-        <span className="ml-auto text-blue-600">▷ 运行</span>
+        <span className="ml-auto text-slate-400">运行已关闭</span>
         <span>♙ 分享</span>
       </div>
       <div className="ide-preview-body">
@@ -63,6 +64,7 @@ function IDEPreview() {
 function Login({ onJoinRoom, initialRoomId }: LoginProps) {
   const [username, setUsername] = useState('');
   const [roomId, setRoomId] = useState(initialRoomId || '');
+  const [accessCode, setAccessCode] = useState('');
   const [isLoggingIn, setLoggingIn] = useState(false);
   const [validationError, setValidationError] = useState('');
 
@@ -70,15 +72,15 @@ function Login({ onJoinRoom, initialRoomId }: LoginProps) {
     const normalizedUsername = username.trim();
     const normalizedRoomId = roomId.trim();
 
-    if (!normalizedUsername || !normalizedRoomId) {
-      setValidationError('请输入昵称和房间 ID');
+    if (!normalizedUsername || !normalizedRoomId || !accessCode) {
+      setValidationError('请输入昵称、房间 ID 和访问口令');
       return;
     }
 
     setValidationError('');
     setLoggingIn(true);
     try {
-      await onJoinRoom(normalizedUsername, normalizedRoomId);
+      await onJoinRoom(normalizedUsername, normalizedRoomId, accessCode);
     } catch (error) {
       console.error('加入房间失败:', error);
       setValidationError('加入房间失败，请检查本地服务后重试');
@@ -87,10 +89,20 @@ function Login({ onJoinRoom, initialRoomId }: LoginProps) {
     }
   };
 
-  const handleCreateRoom = () => {
-    const generatedRoomId = `room-${Math.random().toString(36).slice(2, 8)}`;
-    setRoomId(generatedRoomId);
-    setValidationError('');
+  const handleCreateRoom = async () => {
+    setLoggingIn(true);
+    try {
+      const response = await request.post('/rooms');
+      const data = response.data as { success: boolean; roomId?: string; accessCode?: string; message?: string };
+      if (!data.roomId || !data.accessCode) throw new Error(data.message || '创建失败');
+      setRoomId(data.roomId);
+      setAccessCode(data.accessCode);
+      setValidationError('房间已创建，请立即保存访问口令；服务端不会保存明文。');
+    } catch (error) {
+      setValidationError(error instanceof Error ? error.message : '创建房间失败');
+    } finally {
+      setLoggingIn(false);
+    }
   };
 
   return (
@@ -119,7 +131,7 @@ function Login({ onJoinRoom, initialRoomId }: LoginProps) {
           </h1>
           <p className="join-description">
             与团队成员实时协作编写代码，AI 助手随时提供智能建议，<br className="hidden xl:block" />
-            云端运行环境开箱即用，让开发更高效、更简单。
+            通过房间权限、CRDT 协同和持久化快照，让协作过程可恢复、可验证。
           </p>
 
           <div className="join-features">
@@ -157,6 +169,18 @@ function Login({ onJoinRoom, initialRoomId }: LoginProps) {
             </label>
 
             <label className="field-label">
+              <span>访问口令</span>
+              <input
+                value={accessCode}
+                onChange={(event) => { setAccessCode(event.target.value); setValidationError(''); }}
+                onKeyDown={(event) => event.key === 'Enter' && void handleJoin()}
+                placeholder="创建房间时仅显示一次"
+                autoComplete="off"
+                disabled={isLoggingIn}
+              />
+            </label>
+
+            <label className="field-label">
               <span className="flex items-center justify-between">房间 ID <small>{roomId.length}/64</small></span>
               <input
                 value={roomId}
@@ -181,7 +205,7 @@ function Login({ onJoinRoom, initialRoomId }: LoginProps) {
               <span className="h-px flex-1 bg-slate-200" /><span>或</span><span className="h-px flex-1 bg-slate-200" />
             </div>
 
-            <button className="secondary-action" onClick={handleCreateRoom} disabled={isLoggingIn}>
+            <button className="secondary-action" onClick={() => void handleCreateRoom()} disabled={isLoggingIn}>
               <Plus size={18} />创建新房间
             </button>
           </div>

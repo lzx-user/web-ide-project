@@ -42,6 +42,8 @@ export default function useWorkspaceSocket({
   const isJoined = useIDEStore((state) => state.isJoined);
   const setJoined = useIDEStore((state) => state.setJoined);
   const [isConnected, setIsConnected] = useState(false);
+  const [isYjsConnected, setIsYjsConnected] = useState(false);
+  const [isYjsSynced, setIsYjsSynced] = useState(false);
   const [isWakingUp, setIsWakingUp] = useState(false); // 核心状态：标记后端是否在冷启动
   const [yjsState, setYjsState] = useState<YjsState>({ ydoc: null, provider: null });
   // 1. Yjs数据面的初始化
@@ -81,11 +83,22 @@ export default function useWorkspaceSocket({
       }
     );
     setYjsState({ ydoc, provider });
+    const markDirty = () => useIDEStore.getState().setDirty(true);
+    const handleYjsStatus = ({ status }: { status: string }) => setIsYjsConnected(status === 'connected');
+    const handleYjsSync = (synced: boolean) => setIsYjsSynced(synced);
+    ydoc.on('update', markDirty);
+    provider.on('status', handleYjsStatus);
+    provider.on('sync', handleYjsSync);
 
     console.log('[Yjs] 🔗 数据面连接已建立，准备接管代码同步');
 
     // 清理函数：离开房间时断开连接
     return () => {
+      ydoc.off('update', markDirty);
+      provider.off('status', handleYjsStatus);
+      provider.off('sync', handleYjsSync);
+      setIsYjsConnected(false);
+      setIsYjsSynced(false);
       indexeddbProvider.destroy();
       provider.destroy();
       ydoc.destroy();
@@ -120,6 +133,9 @@ export default function useWorkspaceSocket({
     };
     const handleCodeError = (data: string) => {
       useIDEStore.getState().addOutputLog('error', data);
+    };
+    const handleWorkspaceError = (message: string) => {
+      useIDEStore.getState().addOutputLog('error', message);
     };
 
     // 现在这个方法全权接管了文件的 初始化、新建、删除 的 UI 更新
@@ -196,12 +212,17 @@ export default function useWorkspaceSocket({
     currentSocket.on('initCodePackage', handleInitCodePackage);
 
     // 异常处理
-    currentSocket.on('connect_error', (err) => {
+    const handleConnectError = (err: Error) => {
       console.log('连接失败详情:', err.message);
-      clearPersistedState();  // 清除本地污染的凭证
-      setJoined(false);  // 强制踢回登录页
-      alert('连接服务器失败，可能是登录已过期， 请重新进入房间。');
-    });
+      if (err.message.startsWith('AUTH_')) {
+        clearPersistedState();
+        setJoined(false);
+      } else {
+        useIDEStore.getState().addOutputLog('system', '控制连接中断，正在自动重连；本地编辑不会丢失。');
+      }
+    };
+    currentSocket.on('workspaceError', handleWorkspaceError);
+    currentSocket.on('connect_error', handleConnectError);
 
     // --- 组件卸载/Socket重连时的清理函数 (Cleanup) ---
     // 必须精确卸载指定的具名函数，防止误杀其他模块绑定的同名事件监听器，避免内存泄漏
@@ -211,7 +232,8 @@ export default function useWorkspaceSocket({
       currentSocket.off('executionFinished', handleFinish);
       currentSocket.off('executionStarted', handleExecutionStarted);
       currentSocket.off('initCodePackage', handleInitCodePackage);
-      currentSocket.off('connect_error');
+      currentSocket.off('workspaceError', handleWorkspaceError);
+      currentSocket.off('connect_error', handleConnectError);
     };
   }, [
     currentSocket,
@@ -270,6 +292,8 @@ export default function useWorkspaceSocket({
     ydoc: yjsState.ydoc,
     provider: yjsState.provider,
     isConnected,
+    isYjsConnected,
+    isYjsSynced,
     isWakingUp
   };
 }

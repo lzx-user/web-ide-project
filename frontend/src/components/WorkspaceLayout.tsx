@@ -26,6 +26,8 @@ type WorkspaceLayoutProps = {
   fileList: FileNode[];
   isActiveFile: boolean;
   isConnected: boolean;
+  isYjsConnected: boolean;
+  isYjsSynced: boolean;
   isWakingUp: boolean;
   isSaving: boolean;
   isRunning: boolean;
@@ -65,6 +67,8 @@ export default function WorkspaceLayout({
   fileList,
   isActiveFile,
   isConnected,
+  isYjsConnected,
+  isYjsSynced,
   isWakingUp,
   isSaving,
   isRunning,
@@ -92,10 +96,14 @@ export default function WorkspaceLayout({
   const setIsTerminalOpen = useIDEStore((state) => state.setIsTerminalOpen);
   const bottomTab = useIDEStore((state) => state.bottomTab);
   const setBottomTab = useIDEStore((state) => state.setBottomTab);
-  const [isAIOpen, setIsAIOpen] = useState(true);
+  const aiEnabled = import.meta.env.VITE_ENABLE_AI === 'true';
+  const [isAIOpen, setIsAIOpen] = useState(aiEnabled);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [members, setMembers] = useState<string[]>([]);
   const [openFiles, setOpenFiles] = useState<string[]>([]);
+  const isDirty = useIDEStore((state) => state.isDirty);
+  const savedAt = useIDEStore((state) => state.savedAt);
+  const saveError = useIDEStore((state) => state.saveError);
 
   // Awareness 会持续变化；useEffect 在 provider 更换时同步解绑旧监听，避免成员重复出现。
   useEffect(() => {
@@ -154,6 +162,8 @@ export default function WorkspaceLayout({
         roomId={roomId}
         activeFile={activeFile}
         isConnected={isConnected}
+        isYjsConnected={isYjsConnected}
+        isYjsSynced={isYjsSynced}
         isSaving={isSaving}
         isRunning={isRunning}
         onSave={onSave}
@@ -162,6 +172,9 @@ export default function WorkspaceLayout({
         isAIOpen={isAIOpen}
         onToggleAI={() => setIsAIOpen((open) => !open)}
         members={members}
+        isDirty={isDirty}
+        savedAt={savedAt}
+        aiEnabled={aiEnabled}
       />
 
       <div className="workspace-body flex-1 overflow-hidden">
@@ -181,6 +194,7 @@ export default function WorkspaceLayout({
                 members={members}
                 isAIOpen={isAIOpen}
                 onToggleAI={() => setIsAIOpen((open) => !open)}
+                aiEnabled={aiEnabled}
                 isCollapsed={isSidebarCollapsed}
                 onToggleCollapsed={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
               />
@@ -203,6 +217,7 @@ export default function WorkspaceLayout({
                         >
                           {getFileIcon(path, false, activeFile === path)}
                           <span className="editor-tab-label">{path}</span>
+                          {isDirty && activeFile === path ? <span title="尚未持久化">●</span> : null}
                           <span
                             role="button"
                             tabIndex={0}
@@ -225,7 +240,7 @@ export default function WorkspaceLayout({
                       <span className="editor-tab-more" aria-label="更多编辑器操作">⋮</span>
                       <span className="editor-connection-status">
                         <span className={`workspace-status-dot ${isConnected ? '' : '!bg-amber-400'}`} />
-                        {isConnected ? '实时协作已连接' : '正在连接'}
+                        {!isYjsConnected ? '离线草稿' : isYjsSynced ? '协同已同步' : '正在同步'}
                       </span>
                     </div>
                     <div className="editor-workspace relative">
@@ -247,7 +262,7 @@ export default function WorkspaceLayout({
             </div>
           </Allotment.Pane>
 
-          {isAIOpen && (
+          {aiEnabled && isAIOpen && (
             <Allotment.Pane preferredSize={500} minSize={390} maxSize={560}>
               <div className="workspace-surface ml-2">
                 <AIAssistantPanel
@@ -274,10 +289,10 @@ export default function WorkspaceLayout({
 
       <footer className="workspace-statusbar" aria-label="编辑器状态栏">
         <div className="statusbar-group">
-          <span className="statusbar-item"><GitBranch size={13} />main</span>
+          <span className="statusbar-item" title="Git 集成尚未实现"><GitBranch size={13} />Git 未接入</span>
           <span className="statusbar-item"><span className="statusbar-symbol">×</span>{statusCounts.errors}</span>
           <span className="statusbar-item"><span className="statusbar-symbol">△</span>{statusCounts.warnings}</span>
-          <span className="statusbar-connection"><span className={`workspace-status-dot ${isConnected ? '' : '!bg-amber-400'}`} />{isConnected ? '已连接' : '连接中'}</span>
+          <span className="statusbar-connection" title={saveError || (savedAt ? `持久化于 ${new Date(savedAt).toLocaleTimeString()}` : '')}><span className={`workspace-status-dot ${isConnected && isYjsConnected ? '' : '!bg-amber-400'}`} />{saveError ? '保存失败' : isDirty ? '未持久化' : savedAt ? '已持久化' : '尚未保存'}</span>
         </div>
         <div className="statusbar-group">
           <span className="statusbar-item">行 {cursorPosition.line}，列 {cursorPosition.column}</span>

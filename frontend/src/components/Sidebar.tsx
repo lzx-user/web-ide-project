@@ -147,6 +147,7 @@ type SidebarProps = {
   members: string[];
   isAIOpen: boolean;
   onToggleAI: () => void;
+  aiEnabled: boolean;
   isCollapsed: boolean;
   onToggleCollapsed: () => void;
 };
@@ -167,6 +168,7 @@ export default function Sidebar({
   members,
   isAIOpen,
   onToggleAI,
+  aiEnabled,
   isCollapsed,
   onToggleCollapsed,
 }: SidebarProps) {
@@ -194,10 +196,10 @@ export default function Sidebar({
         <div className={`${navClass} bg-blue-50 text-blue-600`} aria-current="page">
           <LayoutDashboard size={17} /><span className="sidebar-label">工作空间</span>
         </div>
-        <button type="button" onClick={onToggleAI} data-active={isAIOpen} className={navClass}>
+        {aiEnabled ? <button type="button" onClick={onToggleAI} data-active={isAIOpen} className={navClass}>
           <Bot size={17} /><span className="sidebar-label">AI 助手</span>
           <span className="sidebar-label ml-auto rounded-full bg-blue-100 px-2 py-0.5 text-[9px] text-blue-600">Beta</span>
-        </button>
+        </button> : null}
         <button type="button" disabled className={`${navClass} sidebar-disabled`}>
           <Search size={17} /><span className="sidebar-label">搜索</span>
         </button>
@@ -258,12 +260,6 @@ export default function Sidebar({
               handleCreateFile={handleCreateFile}
             />
           )) : <p className="px-4 py-6 text-center text-xs leading-5 text-slate-400">当前房间暂无文件</p>}
-        </div>
-
-        <div className="sidebar-storage">
-          <div className="mb-2 flex items-center justify-between"><span>存储空间</span><span className="text-slate-400">23%</span></div>
-          <div className="mb-1 text-[11px] text-slate-500">2.34 GB / 10 GB</div>
-          <div className="storage-track"><span /></div>
         </div>
 
         <div className="sidebar-members">

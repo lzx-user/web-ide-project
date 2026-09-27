@@ -3,7 +3,7 @@ import type { MutableRefObject } from 'react';
 import { MonacoBinding } from 'y-monaco';
 import type { OnMount } from '@monaco-editor/react';
 import type { WebsocketProvider } from 'y-websocket';
-import type * as Y from 'yjs';
+import * as Y from 'yjs';
 import useIDEStore from '../store/useIDEStore';
 import { STORAGE_KEYS } from '../utils/constants';
 import { getLanguageByFilename } from '../utils/editorLanguage';
@@ -16,6 +16,7 @@ type EditorBindingOptions = {
   prevFileRef: MutableRefObject<string | null>;
   bindingRef: MutableRefObject<MonacoBinding | null>;
   activeFile: string;
+  activeDocumentKey?: string;
   isActiveFile: boolean;
   ydoc: Y.Doc | null;
   provider: WebsocketProvider | null;
@@ -30,6 +31,7 @@ export default function useEditorBinding({
   prevFileRef,
   bindingRef,
   activeFile,
+  activeDocumentKey,
   isActiveFile,
   ydoc,
   provider,
@@ -44,7 +46,7 @@ export default function useEditorBinding({
     if (!editor || !monaco || !ydoc || !provider) return;
 
     // 如果当前没有选中任何文件（例如刚删除了当前文件）
-    if (!activeFile || !isActiveFile) {
+    if (!activeFile || !activeDocumentKey || !isActiveFile) {
       // 撕掉可能存在的旧协同绑定
       if (bindingRef.current) {
         bindingRef.current.destroy();
@@ -89,26 +91,38 @@ export default function useEditorBinding({
 
     // 4. 建立全新绑定
     // 根据当前文件名，向 Yjs 索要一个专属的共享文本类型。比如 ydoc.getText('index.js')
-    const ytext = ydoc.getText(targetFile);
+    const files = ydoc.getMap<Y.Text>('files');
+    let ytext = files.get(activeDocumentKey);
+    if (!ytext) {
+      ytext = new Y.Text();
+      files.set(activeDocumentKey, ytext);
+    }
 
     // 向 Awareness 协议注入自定义身份（用于渲染别人屏幕上的光标名字）
     provider.awareness.setLocalStateField('user', {
       name: useIDEStore.getState().username || '前端开发工程师',
-      color: '#' + Math.floor(Math.random() * 16777215).toString(16)  // 随机生成一个十六进制颜色  
+      color: stableUserColor(useIDEStore.getState().username || '协作者'),
     });
 
     // 涂胶水：把当前文件的 Yjs 数据、Monaco 模型、以及光标同步绑定在一起
-    bindingRef.current = new MonacoBinding(
+    const binding = new MonacoBinding(
       ytext,
       targetCache.model,
       new Set([editor]),
       provider.awareness
     );
+    bindingRef.current = binding;
 
     prevFileRef.current = targetFile;
 
+    return () => {
+      binding.destroy();
+      if (bindingRef.current === binding) bindingRef.current = null;
+    };
+
   }, [
     activeFile,
+    activeDocumentKey,
     isActiveFile,
     ydoc,
     provider,
@@ -119,4 +133,10 @@ export default function useEditorBinding({
     prevFileRef,
     bindingRef,
   ]);
+}
+
+function stableUserColor(username: string): string {
+  let hash = 0;
+  for (const character of username) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
+  return `hsl(${Math.abs(hash) % 360} 68% 48%)`;
 }

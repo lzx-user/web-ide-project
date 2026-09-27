@@ -4,8 +4,8 @@ import type { OnMount } from '@monaco-editor/react';
 import toast from 'react-hot-toast';
 import request from '../services/request';
 import { STORAGE_KEYS } from '../utils/constants';
-import { getLanguageByFilename } from '../utils/editorLanguage';
 import type { EditorCacheEntry, WorkspaceSocket } from '../types/ide';
+import useIDEStore from '../store/useIDEStore';
 
 type WorkspaceActionsOptions = {
   currentSocket: WorkspaceSocket | null;
@@ -29,6 +29,7 @@ export default function useWorkspaceActions({
 }: WorkspaceActionsOptions) {
   const [isSaving, setIsSaving] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const setSaveResult = useIDEStore((state) => state.setSaveResult);
 
   // 创建文件逻辑 只管emit事件，具体文件创建和同步逻辑由后端处理
   const handleCreateFile = ({ path, isFolder }: { path: string; isFolder: boolean }) => {
@@ -111,13 +112,10 @@ export default function useWorkspaceActions({
 
       toast.success('删除成功');
 
-      const cached = fileCacheMap.current.get(filename);
-
-      if (cached?.model) {
-        cached.model.dispose(); // 销毁 Monaco 模型，释放内存
+      for (const deletedPath of response.deletedPaths ?? [filename]) {
+        fileCacheMap.current.get(deletedPath)?.model.dispose();
+        fileCacheMap.current.delete(deletedPath);
       }
-
-      fileCacheMap.current.delete(filename); // 从缓存中移除
 
       // 只有后端确认删除成功后，才清空当前文件
       if (activeFile === filename) {
@@ -140,20 +138,14 @@ export default function useWorkspaceActions({
     const loadingToast = toast.loading('正在保存代码...');
 
     try {
-      const code = editorRef.current.getValue(); // 提取纯文本
-
-      // 使用 axios 发送 POST 请求，axios 会自动将对象转换为 JSON 并设置 Content-Type
-      await request.post('/save', {
-        roomId,
-        code,
-        filename: activeFile, // 传递当前编辑的文件名，后端可以根据这个信息进行保存
-        language: getLanguageByFilename(activeFile),
-      });
+      const { data } = await request.post('/save');
 
       toast.success('保存成功', { id: loadingToast });
+      setSaveResult(data.savedAt ?? new Date().toISOString());
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '未知错误';
       toast.error(`保存失败: ${message}`, { id: loadingToast });
+      setSaveResult(null, message);
     } finally {
       setIsSaving(false);
     }
@@ -161,6 +153,10 @@ export default function useWorkspaceActions({
 
   // 运行代码逻辑
   const handleRun = async () => {
+    if (import.meta.env.VITE_ENABLE_CODE_EXECUTION !== 'true') {
+      toast.error('演示环境已关闭代码执行');
+      return;
+    }
     if (!editorRef.current || isRunning || !roomId || !isActiveFile) {
       toast.error('请选择一个文件后再运行代码');
       return;
