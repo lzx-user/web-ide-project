@@ -1,56 +1,53 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import { randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { promisify } from 'node:util';
 
-type CreateRoomSessionInput = {
+import { createRoomRecord, findRoom } from '../repositories/roomRepository.js';
+
+const scrypt = promisify(scryptCallback);
+const SCRYPT_KEY_LENGTH = 64;
+
+async function hashAccessCode(accessCode: string): Promise<string> {
+  const salt = randomBytes(16);
+  const derived = await scrypt(accessCode, salt, SCRYPT_KEY_LENGTH) as Buffer;
+  return `scrypt:v1:${salt.toString('base64')}:${derived.toString('base64')}`;
+}
+
+async function verifyAccessCode(accessCode: string, encoded: string): Promise<boolean> {
+  const [algorithm, version, saltText, hashText] = encoded.split(':');
+  if (algorithm !== 'scrypt' || version !== 'v1' || !saltText || !hashText) return false;
+  const expected = Buffer.from(hashText, 'base64');
+  const actual = await scrypt(accessCode, Buffer.from(saltText, 'base64'), expected.length) as Buffer;
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+export function normalizeUsername(input: unknown): string {
+  const username = String(input ?? '').trim();
+  if (!username || username.length > 20) throw new Error('昵称需为 1-20 个字符');
+  return username;
+}
+
+export async function createRoom(): Promise<{ roomId: string; accessCode: string }> {
+  const roomId = randomUUID();
+  const accessCode = randomBytes(12).toString('base64url');
+  await createRoomRecord(roomId, await hashAccessCode(accessCode), {
+    id: randomUUID(),
+    documentKey: randomUUID(),
+  });
+  return { roomId, accessCode };
+}
+
+export async function authorizeRoomJoin(input: {
   username?: unknown;
   roomId?: unknown;
-};
-
-type RoomSessionResult =
-  | { success: true; username: string; roomId: string }
-  | { success: false; status: number; message: string };
-
-export function getTempDir(): string {
-  return path.join(__dirname, '../../temp');
-}
-
-export function getRoomDir(roomId: string): string {
-  return path.join(getTempDir(), roomId);
-}
-
-export function ensureRoomDir(roomId: string): string {
-  const tempDir = getTempDir();
-  const roomDir = getRoomDir(roomId);
-
-  fs.mkdirSync(tempDir, { recursive: true });
-  fs.mkdirSync(roomDir, { recursive: true });
-  return roomDir;
-}
-
-export function createRoomSession({
-  username,
-  roomId,
-}: CreateRoomSessionInput): RoomSessionResult {
-  const cleanUsername = String(username ?? '').trim();
-  const cleanRoomId = String(roomId ?? '').trim();
-
-  if (!cleanUsername || !cleanRoomId) {
-    return {
-      success: false,
-      status: 400,
-      message: '请输入昵称和房间号',
-    };
+  accessCode?: unknown;
+}): Promise<{ username: string; roomId: string }> {
+  const username = normalizeUsername(input.username);
+  const roomId = String(input.roomId ?? '').trim();
+  const accessCode = String(input.accessCode ?? '');
+  if (!/^[0-9a-f-]{36}$/i.test(roomId) || !accessCode) throw new Error('房间 ID 或访问口令无效');
+  const room = await findRoom(roomId);
+  if (!room || room.status !== 'active' || !(await verifyAccessCode(accessCode, room.accessCodeHash))) {
+    throw new Error('房间不存在或访问口令错误');
   }
-
-  // 房间号会成为目录名，因此只允许安全、易分享的字符。
-  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(cleanRoomId)) {
-    return {
-      success: false,
-      status: 400,
-      message: '房间号只能包含字母、数字、下划线和短横线',
-    };
-  }
-
-  ensureRoomDir(cleanRoomId);
-  return { success: true, username: cleanUsername, roomId: cleanRoomId };
+  return { username, roomId };
 }

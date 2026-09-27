@@ -46,6 +46,24 @@ const config = {
     model: process.env.AI_MODEL ?? 'gpt-4.1-mini',
     timeoutMs: Number(process.env.AI_TIMEOUT_MS ?? 45_000),
   },
+  database: {
+    url: process.env.DATABASE_URL,
+    ssl: process.env.DATABASE_SSL === 'true' || isProd,
+  },
+  features: {
+    codeExecution: process.env.ENABLE_CODE_EXECUTION === 'true' && !isProd,
+    terminal: process.env.ENABLE_TERMINAL === 'true' && !isProd,
+  },
+  limits: {
+    maxFilesPerRoom: Number(process.env.MAX_FILES_PER_ROOM ?? 200),
+    maxPathLength: Number(process.env.MAX_PATH_LENGTH ?? 260),
+    maxDirectoryDepth: Number(process.env.MAX_DIRECTORY_DEPTH ?? 12),
+    maxDocumentBytes: Number(process.env.MAX_DOCUMENT_BYTES ?? 500_000),
+  },
 } as const;
+
+if (isProd && !config.database.url) {
+  throw new Error('生产环境必须配置 DATABASE_URL');
+}
 
 export default config;

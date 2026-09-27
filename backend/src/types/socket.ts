@@ -1,9 +1,10 @@
-import type { FileTreeNode } from '../services/fileService.js';
+import type { FileTreeNode } from '../repositories/fileRepository.js';
 
 export type SocketAck = (result: {
   success: boolean;
   msg?: string;
   cleaned?: string;
+  deletedPaths?: string[];
 }) => void;
 
 export interface ClientToServerEvents {
@@ -23,12 +24,15 @@ export interface ServerToClientEvents {
   codeOutput: (output: string) => void;
   codeError: (error: string) => void;
   executionFinished: (exitCode: number) => void;
+  workspaceError: (message: string) => void;
   'terminal-out': (data: string) => void;
 }
 
 export interface SocketData {
   user: {
+    sessionId: string;
     username: string;
     roomId: string;
+    role: 'owner' | 'editor';
   };
 }

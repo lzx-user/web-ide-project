@@ -1,89 +1,53 @@
-import jwt from 'jsonwebtoken';
 import type { Server } from 'socket.io';
 
 import config from '../../config.js';
 import PtyManager from '../pty/PtyManager.js';
+import { createRoomFile, deleteRoomFile, listRoomFiles } from '../repositories/fileRepository.js';
+import { verifyRoomToken } from '../services/authService.js';
 import { executeCode } from '../services/codeService.js';
-import {
-  buildFileTree,
-  createWorkspaceEntry,
-  deleteWorkspaceEntry,
-} from '../services/fileService.js';
-import { ensureRoomDir } from '../services/roomService.js';
-import type {
-  ClientToServerEvents,
-  ServerToClientEvents,
-  SocketData,
-} from '../types/socket.js';
+import type { ClientToServerEvents, ServerToClientEvents, SocketData } from '../types/socket.js';
+import { removeRoomDocuments } from '../yjs/yjsServer.js';
 
-type WorkspaceServer = Server<
-  ClientToServerEvents,
-  ServerToClientEvents,
-  Record<string, never>,
-  SocketData
->;
+type WorkspaceServer = Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
+const errorMessage = (error: unknown) => error instanceof Error ? error.message : '未知错误';
 
-const enableTerminal = process.env.ENABLE_TERMINAL === 'true';
-const errorMessage = (error: unknown) =>
-  error instanceof Error ? error.message : '未知错误';
-
-/** 注册房间、文件操作、代码运行和可选终端的 Socket 事件。 */
 export default function registerWorkspaceSocket(io: WorkspaceServer): void {
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
-    if (typeof token !== 'string') {
-      next(new Error('拒绝访问：未提供 Token'));
-      return;
-    }
-
+    if (typeof token !== 'string') return next(new Error('AUTH_MISSING: 未提供 Token'));
     try {
-      const payload = jwt.verify(token, config.jwt.secret);
-      if (
-        typeof payload === 'string' ||
-        typeof payload.roomId !== 'string' ||
-        typeof payload.username !== 'string'
-      ) {
-        throw new Error('Token 中缺少房间信息');
-      }
-
-      // SocketData 是 Socket.io 官方提供的自定义数据容器，避免修改 socket 对象类型。
-      socket.data.user = {
-        roomId: payload.roomId,
-        username: payload.username,
-      };
+      socket.data.user = verifyRoomToken(token);
       next();
     } catch {
-      next(new Error('拒绝访问：Token 无效或已过期'));
+      next(new Error('AUTH_INVALID: Token 无效或已过期'));
     }
   });
 
   io.on('connection', (socket) => {
     const { roomId, username } = socket.data.user;
-    const roomDir = ensureRoomDir(roomId);
-
     socket.join(roomId);
     console.log(`[房间 ${roomId}] 用户 ${username} 已连接`);
-    socket.emit('initCodePackage', buildFileTree(roomDir));
+    void listRoomFiles(roomId).then((tree) => socket.emit('initCodePackage', tree)).catch((error) => {
+      socket.emit('workspaceError', `文件树加载失败：${errorMessage(error)}`);
+    });
 
-    socket.on('createFile', ({ filename, isFolder }, callback) => {
+    socket.on('createFile', async ({ filename, isFolder }, callback) => {
       try {
-        const result = createWorkspaceEntry(roomDir, filename, isFolder);
-        callback?.(result);
-        if (result.success) {
-          io.to(roomId).emit('initCodePackage', buildFileTree(roomDir));
-        }
+        const result = await createRoomFile(roomId, filename, isFolder);
+        callback?.({ success: true, cleaned: result.normalizedPath });
+        io.to(roomId).emit('initCodePackage', await listRoomFiles(roomId));
       } catch (error) {
-        callback?.({ success: false, msg: errorMessage(error) });
+        const raw = errorMessage(error);
+        callback?.({ success: false, msg: raw.includes('duplicate key') ? '文件或文件夹已存在' : raw });
       }
     });
 
-    socket.on('deleteFile', ({ filename }, callback) => {
+    socket.on('deleteFile', async ({ filename }, callback) => {
       try {
-        const result = deleteWorkspaceEntry(roomDir, filename);
-        callback?.(result);
-        if (result.success) {
-          io.to(roomId).emit('initCodePackage', buildFileTree(roomDir));
-        }
+        const result = await deleteRoomFile(roomId, filename);
+        await removeRoomDocuments(roomId, result.documentKeys);
+        callback?.({ success: true, deletedPaths: result.deletedPaths });
+        io.to(roomId).emit('initCodePackage', await listRoomFiles(roomId));
       } catch (error) {
         callback?.({ success: false, msg: errorMessage(error) });
       }
@@ -91,36 +55,22 @@ export default function registerWorkspaceSocket(io: WorkspaceServer): void {
 
     socket.on('executeCode', ({ code, filename }) => {
       io.to(roomId).emit('executionStarted');
-
-      try {
-        executeCode({
-          roomDir,
-          code,
-          filename,
-          onOutput: (output) => io.to(roomId).emit('codeOutput', output),
-          onError: (error) => io.to(roomId).emit('codeError', error),
-          onFinish: (exitCode) => {
-            io.to(roomId).emit('executionFinished', exitCode);
-          },
-        });
-      } catch (error) {
-        io.to(roomId).emit('codeError', `服务器内部异常：${errorMessage(error)}`);
+      if (!config.features.codeExecution) {
+        io.to(roomId).emit('codeError', '演示环境已关闭代码执行；代码不会发送给本机子进程。');
         io.to(roomId).emit('executionFinished', 1);
+        return;
       }
+      executeCode({
+        code,
+        filename,
+        onOutput: (output) => io.to(roomId).emit('codeOutput', output),
+        onError: (error) => io.to(roomId).emit('codeError', error),
+        onFinish: (exitCode) => io.to(roomId).emit('executionFinished', exitCode),
+      });
     });
 
-    // 终端默认关闭；保留原入口，便于以后接入隔离容器后再开放。
-    const userPty = enableTerminal ? new PtyManager(socket, roomId) : null;
-    if (userPty) {
-      socket.on('terminal-resize', ({ cols, rows }) => {
-        try {
-          userPty.resize(cols, rows);
-        } catch (error) {
-          console.warn('调整终端大小失败：', errorMessage(error));
-        }
-      });
-    }
-
+    const userPty = config.features.terminal ? new PtyManager(socket, roomId) : null;
+    if (userPty) socket.on('terminal-resize', ({ cols, rows }) => userPty.resize(cols, rows));
     socket.on('disconnect', () => {
       console.log(`[房间 ${roomId}] 用户 ${username} 已断开连接`);
       userPty?.destroy();

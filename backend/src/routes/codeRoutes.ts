@@ -1,36 +1,14 @@
 import { Router } from 'express';
 
 import authMiddleware from '../middlewares/authMiddleware.js';
-import { ensureRoomDir } from '../services/roomService.js';
-import { saveCodeToFile } from '../services/codeService.js';
+import { flushRoomDocument } from '../yjs/yjsServer.js';
 
 const router = Router();
 
-router.post('/api/save', authMiddleware, (req, res) => {
-  const { code, filename } = req.body as {
-    code?: unknown;
-    filename?: unknown;
-  };
-  const roomId = req.user.roomId;
-
-  if (typeof filename !== 'string' || typeof code !== 'string') {
-    res.status(400).json({ success: false, message: '文件名或代码内容无效' });
-    return;
-  }
-
+router.post('/api/save', authMiddleware, async (req, res) => {
   try {
-    const result = saveCodeToFile({
-      roomDir: ensureRoomDir(roomId),
-      filename,
-      code,
-    });
-
-    if (!result.success) {
-      res.status(result.status).json(result);
-      return;
-    }
-
-    res.json(result);
+    const result = await flushRoomDocument(req.user.roomId);
+    res.json({ success: true, message: '协同文档已持久化', ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : '保存失败';
     res.status(500).json({ success: false, message });
