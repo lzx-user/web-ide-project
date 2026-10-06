@@ -3,6 +3,12 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
+  resolve: {
+    // Monaco 0.57 收紧了 package exports；y-monaco 仍引用旧的深层入口。
+    alias: {
+      'monaco-editor/esm/vs/editor/editor.api.js': 'monaco-editor',
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),

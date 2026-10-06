@@ -1,4 +1,5 @@
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useState } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import useIDEStore from "../store/useIDEStore";
 import { STORAGE_KEYS } from "../utils/constants";
 // Yjs 核心三剑客
@@ -6,7 +7,20 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 // 引入原生的 IndexedDB 离线持久化工具
 import { IndexeddbPersistence } from 'y-indexeddb';
-import type { FileNode } from '../types/ide';
+import type { FileNode, WorkspaceSocket } from '../types/ide';
+
+type UseWorkspaceSocketOptions = {
+  currentSocket: WorkspaceSocket | null;
+  roomId: string;
+  hasInitializedRef: MutableRefObject<boolean>;
+  setIsRunning: Dispatch<SetStateAction<boolean>>;
+  clearPersistedState: () => void;
+};
+
+type YjsState = {
+  ydoc: Y.Doc | null;
+  provider: WebsocketProvider | null;
+};
 
 /**
  * 核心自定义 Hook：接管工作区所有的 WebSocket 通信与底层协同逻辑
@@ -21,21 +35,18 @@ export default function useWorkspaceSocket({
   roomId,
   hasInitializedRef, // 防断线重连覆盖锁
   setIsRunning,
-  clearPersistedState  // 持久化缓存清理函数
-}) {
+  clearPersistedState, // 持久化缓存清理函数
+}: UseWorkspaceSocketOptions) {
   const setFileList = useIDEStore((state) => state.setFileList);
   const setActiveFile = useIDEStore((state) => state.setActiveFile);
   const isJoined = useIDEStore((state) => state.isJoined);
   const setJoined = useIDEStore((state) => state.setJoined);
+  const role = useIDEStore((state) => state.role);
   const [isConnected, setIsConnected] = useState(false);
+  const [isYjsConnected, setIsYjsConnected] = useState(false);
+  const [isYjsSynced, setIsYjsSynced] = useState(false);
   const [isWakingUp, setIsWakingUp] = useState(false); // 核心状态：标记后端是否在冷启动
-  const [yjsState, setYjsState] = useReducer(
-    (state, nextState) => ({ ...state, ...nextState }),
-    {
-      ydoc: null,
-      provider: null,
-    }
-  )
+  const [yjsState, setYjsState] = useState<YjsState>({ ydoc: null, provider: null });
   // 1. Yjs数据面的初始化
   useEffect(() => {
     // 只有在用户成功加入房间后，才启动数据同步隧道
@@ -46,10 +57,13 @@ export default function useWorkspaceSocket({
 
     // 2. 注入离线：将当前房间的 ydoc 绑定到浏览器的本地数据库
     // 挂载浏览器本地数据库，做离线历史合并树
-    const indexeddbProvider = new IndexeddbPersistence(`room-${roomId}`, ydoc);
+    // 只读成员不加载历史离线草稿，避免同一浏览器过去的编辑状态污染只读视图。
+    const indexeddbProvider = role === 'viewer'
+      ? null
+      : new IndexeddbPersistence(`room-${roomId}`, ydoc);
 
-    indexeddbProvider.on('synced', () => {
-      console.log('[Yjs] 📦 本地离线草稿加载完毕，且保留了完美的历史合并树');
+    indexeddbProvider?.on('synced', () => {
+      console.log('[Yjs] 📦 本地离线草稿加载完毕');
     });
 
     const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
@@ -73,17 +87,30 @@ export default function useWorkspaceSocket({
       }
     );
     setYjsState({ ydoc, provider });
+    const markDirty = () => {
+      if (role !== 'viewer') useIDEStore.getState().setDirty(true);
+    };
+    const handleYjsStatus = ({ status }: { status: string }) => setIsYjsConnected(status === 'connected');
+    const handleYjsSync = (synced: boolean) => setIsYjsSynced(synced);
+    ydoc.on('update', markDirty);
+    provider.on('status', handleYjsStatus);
+    provider.on('sync', handleYjsSync);
 
     console.log('[Yjs] 🔗 数据面连接已建立，准备接管代码同步');
 
     // 清理函数：离开房间时断开连接
     return () => {
-      indexeddbProvider.destroy();
+      ydoc.off('update', markDirty);
+      provider.off('status', handleYjsStatus);
+      provider.off('sync', handleYjsSync);
+      setIsYjsConnected(false);
+      setIsYjsSynced(false);
+      indexeddbProvider?.destroy();
       provider.destroy();
       ydoc.destroy();
       console.log('[Yjs] 🛑 数据面连接已销毁');
     };
-  }, [roomId, isJoined]);
+  }, [roomId, isJoined, role]);
 
   // 2. Socket.io 控制面的监听与卸载
   useEffect(() => {
@@ -92,7 +119,7 @@ export default function useWorkspaceSocket({
 
     // 终端执行相关事件
     // 当进程执行完毕，不仅要打日志，还要把运行状态解锁，允许用户再次点击运行
-    const handleFinish = (exitCode) => {
+    const handleFinish = (exitCode: number) => {
       useIDEStore.getState().addOutputLog('info', `\n[进程执行完毕，退出码 ${exitCode}]`);
       setIsRunning(false);
     };
@@ -100,21 +127,25 @@ export default function useWorkspaceSocket({
     // 点击运行时，自动切到 output 面板并清空旧日志 
     const handleExecutionStarted = () => {
       setIsRunning(true);
-      // 直接调用 Store 的方法
+      // 展开的是运行输出面板，不会开启受 ENABLE_TERMINAL 保护的交互式终端。
+      useIDEStore.getState().setIsTerminalOpen(true);
       useIDEStore.getState().setBottomTab('output');
       useIDEStore.getState().clearOutputLogs();
     };
 
     // 新增针对独立执行通道的事件处理
-    const handleCodeOutput = (data) => {
+    const handleCodeOutput = (data: string) => {
       useIDEStore.getState().addOutputLog('info', data);
     };
-    const handleCodeError = (data) => {
+    const handleCodeError = (data: string) => {
       useIDEStore.getState().addOutputLog('error', data);
+    };
+    const handleWorkspaceError = (message: string) => {
+      useIDEStore.getState().addOutputLog('error', message);
     };
 
     // 现在这个方法全权接管了文件的 初始化、新建、删除 的 UI 更新
-    const handleInitCodePackage = (codeTree) => {
+    const handleInitCodePackage = (codeTree: FileNode[]) => {
       // 1. 文件树永远可以更新，因为队友新建/删除文件也需要同步到侧边栏
       setFileList(codeTree);
 
@@ -187,12 +218,17 @@ export default function useWorkspaceSocket({
     currentSocket.on('initCodePackage', handleInitCodePackage);
 
     // 异常处理
-    currentSocket.on('connect_error', (err) => {
+    const handleConnectError = (err: Error) => {
       console.log('连接失败详情:', err.message);
-      clearPersistedState();  // 清除本地污染的凭证
-      setJoined(false);  // 强制踢回登录页
-      alert('连接服务器失败，可能是登录已过期， 请重新进入房间。');
-    });
+      if (err.message.startsWith('AUTH_')) {
+        clearPersistedState();
+        setJoined(false);
+      } else {
+        useIDEStore.getState().addOutputLog('system', '控制连接中断，正在自动重连；本地编辑不会丢失。');
+      }
+    };
+    currentSocket.on('workspaceError', handleWorkspaceError);
+    currentSocket.on('connect_error', handleConnectError);
 
     // --- 组件卸载/Socket重连时的清理函数 (Cleanup) ---
     // 必须精确卸载指定的具名函数，防止误杀其他模块绑定的同名事件监听器，避免内存泄漏
@@ -202,7 +238,8 @@ export default function useWorkspaceSocket({
       currentSocket.off('executionFinished', handleFinish);
       currentSocket.off('executionStarted', handleExecutionStarted);
       currentSocket.off('initCodePackage', handleInitCodePackage);
-      currentSocket.off('connect_error');
+      currentSocket.off('workspaceError', handleWorkspaceError);
+      currentSocket.off('connect_error', handleConnectError);
     };
   }, [
     currentSocket,
@@ -261,6 +298,8 @@ export default function useWorkspaceSocket({
     ydoc: yjsState.ydoc,
     provider: yjsState.provider,
     isConnected,
+    isYjsConnected,
+    isYjsSynced,
     isWakingUp
   };
 }

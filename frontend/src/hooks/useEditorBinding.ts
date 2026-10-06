@@ -1,8 +1,27 @@
 import { useEffect } from 'react';
+import type { MutableRefObject } from 'react';
 import { MonacoBinding } from 'y-monaco';
+import type { OnMount } from '@monaco-editor/react';
+import type { WebsocketProvider } from 'y-websocket';
+import * as Y from 'yjs';
 import useIDEStore from '../store/useIDEStore';
 import { STORAGE_KEYS } from '../utils/constants';
 import { getLanguageByFilename } from '../utils/editorLanguage';
+import type { EditorCacheEntry } from '../types/ide';
+
+type EditorBindingOptions = {
+  editorRef: MutableRefObject<Parameters<OnMount>[0] | null>;
+  monacoRef: MutableRefObject<Parameters<OnMount>[1] | null>;
+  fileCacheMap: MutableRefObject<Map<string, EditorCacheEntry>>;
+  prevFileRef: MutableRefObject<string | null>;
+  bindingRef: MutableRefObject<MonacoBinding | null>;
+  activeFile: string;
+  activeDocumentKey?: string;
+  isActiveFile: boolean;
+  ydoc: Y.Doc | null;
+  provider: WebsocketProvider | null;
+  isEditorMounted: boolean;
+};
 
 // Monaco + Yjs 文件绑定
 export default function useEditorBinding({
@@ -12,11 +31,12 @@ export default function useEditorBinding({
   prevFileRef,
   bindingRef,
   activeFile,
+  activeDocumentKey,
   isActiveFile,
   ydoc,
   provider,
   isEditorMounted,
-}) {
+}: EditorBindingOptions) {
   // 监听切换文件: 解绑旧文件，绑定新文件
   useEffect(() => {
     const editor = editorRef.current;
@@ -26,7 +46,7 @@ export default function useEditorBinding({
     if (!editor || !monaco || !ydoc || !provider) return;
 
     // 如果当前没有选中任何文件（例如刚删除了当前文件）
-    if (!activeFile || !isActiveFile) {
+    if (!activeFile || !activeDocumentKey || !isActiveFile) {
       // 撕掉可能存在的旧协同绑定
       if (bindingRef.current) {
         bindingRef.current.destroy();
@@ -39,8 +59,10 @@ export default function useEditorBinding({
     localStorage.setItem(STORAGE_KEYS.ACTIVE_FILE, targetFile);  // 每次文件真正切换时，存入本地记忆
 
     // 1. 整理旧现场：保存上一个文件的光标视图，并撕掉旧胶水
-    if (prevFileRef.current && fileCacheMap.current.has(prevFileRef.current)) {
-      fileCacheMap.current.get(prevFileRef.current).viewState = editor.saveViewState();
+    if (prevFileRef.current) {
+      const previousCache = fileCacheMap.current.get(prevFileRef.current);
+      // Map.get 仍可能返回 undefined，因此先收窄类型再更新视图状态。
+      if (previousCache) previousCache.viewState = editor.saveViewState();
     }
 
     // 撕掉旧文件的 Yjs 绑定，防止你在 index.js 里打字，却同步到了上一个文件里
@@ -69,26 +91,39 @@ export default function useEditorBinding({
 
     // 4. 建立全新绑定
     // 根据当前文件名，向 Yjs 索要一个专属的共享文本类型。比如 ydoc.getText('index.js')
-    const ytext = ydoc.getText(targetFile);
+    const files = ydoc.getMap<Y.Text>('files');
+    let ytext = files.get(activeDocumentKey);
+    if (!ytext) {
+      ytext = new Y.Text();
+      files.set(activeDocumentKey, ytext);
+    }
 
     // 向 Awareness 协议注入自定义身份（用于渲染别人屏幕上的光标名字）
     provider.awareness.setLocalStateField('user', {
       name: useIDEStore.getState().username || '前端开发工程师',
-      color: '#' + Math.floor(Math.random() * 16777215).toString(16)  // 随机生成一个十六进制颜色  
+      color: stableUserColor(useIDEStore.getState().username || '协作者'),
+      role: useIDEStore.getState().role,
     });
 
     // 涂胶水：把当前文件的 Yjs 数据、Monaco 模型、以及光标同步绑定在一起
-    bindingRef.current = new MonacoBinding(
+    const binding = new MonacoBinding(
       ytext,
       targetCache.model,
       new Set([editor]),
       provider.awareness
     );
+    bindingRef.current = binding;
 
     prevFileRef.current = targetFile;
 
+    return () => {
+      binding.destroy();
+      if (bindingRef.current === binding) bindingRef.current = null;
+    };
+
   }, [
     activeFile,
+    activeDocumentKey,
     isActiveFile,
     ydoc,
     provider,
@@ -99,4 +134,10 @@ export default function useEditorBinding({
     prevFileRef,
     bindingRef,
   ]);
+}
+
+function stableUserColor(username: string): string {
+  let hash = 0;
+  for (const character of username) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
+  return `hsl(${Math.abs(hash) % 360} 68% 48%)`;
 }

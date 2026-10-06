@@ -1,9 +1,9 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 export type ExecuteCodeOptions = {
-  roomDir: string;
   filename: string;
   code: string;
   onOutput: (output: string) => void;
@@ -11,27 +11,7 @@ export type ExecuteCodeOptions = {
   onFinish: (exitCode: number) => void;
 };
 
-export type SaveCodeOptions = {
-  roomDir: string;
-  filename: string;
-  code: string;
-};
-
-import { safeResolve } from '../utils/safePath.js';
-
-export function saveCodeToFile({ roomDir, filename, code }: SaveCodeOptions) {
-  if (!filename || typeof code !== 'string') {
-    return { success: false as const, status: 400, message: '文件名或代码内容无效' };
-  }
-
-  const { resolvedPath } = safeResolve(roomDir, filename);
-  fs.mkdirSync(path.dirname(resolvedPath), { recursive: true });
-  fs.writeFileSync(resolvedPath, code, 'utf8');
-  return { success: true as const, message: '保存成功' };
-}
-
 export function executeCode({
-  roomDir,
   filename,
   code,
   onOutput,
@@ -39,14 +19,15 @@ export function executeCode({
   onFinish,
 }: ExecuteCodeOptions): void {
   const extension = /\.(ts|tsx)$/i.test(filename) ? '.ts' : '.js';
-  const tempFile = path.join(roomDir, `run-${Date.now()}${extension}`);
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'web-ide-run-'));
+  const tempFile = path.join(tempDir, `main${extension}`);
   fs.writeFileSync(tempFile, code, 'utf8');
 
   const args = extension === '.ts'
     ? ['--import', 'tsx', tempFile]
     : [tempFile];
   const child = spawn(process.execPath, args, {
-    cwd: roomDir,
+    cwd: tempDir,
     shell: false,
   });
 
@@ -54,7 +35,7 @@ export function executeCode({
   const finishOnce = (exitCode: number) => {
     if (finished) return;
     finished = true;
-    try { fs.unlinkSync(tempFile); } catch { /* 临时文件清理失败不影响结果 */ }
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* 清理失败不影响结果 */ }
     onFinish(exitCode);
   };
 

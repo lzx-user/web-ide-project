@@ -1,8 +1,22 @@
 import { useState } from 'react';
+import type { MutableRefObject } from 'react';
+import type { OnMount } from '@monaco-editor/react';
 import toast from 'react-hot-toast';
 import request from '../services/request';
 import { STORAGE_KEYS } from '../utils/constants';
-import { getLanguageByFilename } from '../utils/editorLanguage';
+import type { EditorCacheEntry, WorkspaceSocket } from '../types/ide';
+import useIDEStore from '../store/useIDEStore';
+
+type WorkspaceActionsOptions = {
+  currentSocket: WorkspaceSocket | null;
+  roomId: string;
+  activeFile: string;
+  isActiveFile: boolean;
+  editorRef: MutableRefObject<Parameters<OnMount>[0] | null>;
+  fileCacheMap: MutableRefObject<Map<string, EditorCacheEntry>>;
+  setActiveFile: (filename: string) => void;
+};
+
 // 创建、删除、保存、运行
 export default function useWorkspaceActions({
   currentSocket,
@@ -12,12 +26,19 @@ export default function useWorkspaceActions({
   editorRef,
   fileCacheMap,
   setActiveFile,
-}) {
+}: WorkspaceActionsOptions) {
   const [isSaving, setIsSaving] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const setSaveResult = useIDEStore((state) => state.setSaveResult);
+  const role = useIDEStore((state) => state.role);
+  const canEdit = role !== 'viewer';
 
   // 创建文件逻辑 只管emit事件，具体文件创建和同步逻辑由后端处理
-  const handleCreateFile = ({ path, isFolder }) => {
+  const handleCreateFile = ({ path, isFolder }: { path: string; isFolder: boolean }) => {
+    if (!canEdit) {
+      toast.error('当前为只读成员，不能创建文件');
+      return;
+    }
     if (!currentSocket) {
       toast.error('Socket 未连接， 无法创建');
       return;
@@ -75,7 +96,11 @@ export default function useWorkspaceActions({
   };
 
   // 删除文件逻辑
-  const handleDeleteFile = (filename) => {
+  const handleDeleteFile = (filename: string) => {
+    if (!canEdit) {
+      toast.error('当前为只读成员，不能删除文件');
+      return;
+    }
     // 拦截确认，防止手滑误删
     if (!window.confirm(`确定要删除${filename}`)) return;
 
@@ -97,13 +122,10 @@ export default function useWorkspaceActions({
 
       toast.success('删除成功');
 
-      const cached = fileCacheMap.current.get(filename);
-
-      if (cached?.model) {
-        cached.model.dispose(); // 销毁 Monaco 模型，释放内存
+      for (const deletedPath of response.deletedPaths ?? [filename]) {
+        fileCacheMap.current.get(deletedPath)?.model.dispose();
+        fileCacheMap.current.delete(deletedPath);
       }
-
-      fileCacheMap.current.delete(filename); // 从缓存中移除
 
       // 只有后端确认删除成功后，才清空当前文件
       if (activeFile === filename) {
@@ -116,6 +138,10 @@ export default function useWorkspaceActions({
 
   // 保存代码逻辑
   const handleSave = async () => {
+    if (!canEdit) {
+      toast.error('当前为只读成员，不能保存修改');
+      return;
+    }
     // 如果没有房间号，直接拦截，不让它往后端发瞎请求
     if (!editorRef.current || isSaving || !roomId || !isActiveFile) {
       toast.error('请选择一个文件后再保存');
@@ -126,19 +152,14 @@ export default function useWorkspaceActions({
     const loadingToast = toast.loading('正在保存代码...');
 
     try {
-      const code = editorRef.current.getValue(); // 提取纯文本
-
-      // 使用 axios 发送 POST 请求，axios 会自动将对象转换为 JSON 并设置 Content-Type
-      await request.post('/save', {
-        roomId,
-        code,
-        filename: activeFile, // 传递当前编辑的文件名，后端可以根据这个信息进行保存
-        language: getLanguageByFilename(activeFile),
-      });
+      const { data } = await request.post('/save');
 
       toast.success('保存成功', { id: loadingToast });
-    } catch (err) {
-      toast.error(`保存失败: ${err.message}`, { id: loadingToast });
+      setSaveResult(data.savedAt ?? new Date().toISOString());
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '未知错误';
+      toast.error(`保存失败: ${message}`, { id: loadingToast });
+      setSaveResult(null, message);
     } finally {
       setIsSaving(false);
     }
@@ -146,6 +167,14 @@ export default function useWorkspaceActions({
 
   // 运行代码逻辑
   const handleRun = async () => {
+    if (!canEdit) {
+      toast.error('当前为只读成员，不能运行代码');
+      return;
+    }
+    if (import.meta.env.VITE_ENABLE_CODE_EXECUTION !== 'true') {
+      toast.error('演示环境已关闭代码执行');
+      return;
+    }
     if (!editorRef.current || isRunning || !roomId || !isActiveFile) {
       toast.error('请选择一个文件后再运行代码');
       return;
@@ -155,11 +184,7 @@ export default function useWorkspaceActions({
 
     // 通过 Socket 向后端发送执行请求，携带当前代码和文件名
     if (currentSocket) {
-      currentSocket.emit('executeCode', { 
-        roomId, 
-        code,
-        filename: activeFile, 
-      });
+      currentSocket.emit('executeCode', { code, filename: activeFile });
     }
   };
 

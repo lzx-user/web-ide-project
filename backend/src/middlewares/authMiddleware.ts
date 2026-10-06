@@ -1,7 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
-
-import config from '../../config.js';
+import { canEditWorkspace } from '../auth/roles.js';
+import { verifyRoomToken } from '../services/authService.js';
 
 export default function authMiddleware(
   req: Request,
@@ -17,9 +16,21 @@ export default function authMiddleware(
   }
 
   try {
-    req.user = jwt.verify(token, config.jwt.secret) as Express.Request['user'];
+    req.user = verifyRoomToken(token);
     next();
   } catch {
     res.status(401).json({ success: false, message: 'Token 无效或已过期' });
   }
+}
+
+export function requireWorkspaceEditor(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (!canEditWorkspace(req.user.role)) {
+    res.status(403).json({ success: false, message: '当前为只读成员，无权执行此操作' });
+    return;
+  }
+  next();
 }

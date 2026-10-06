@@ -1,11 +1,20 @@
 import type { editor } from 'monaco-editor';
 import type { Socket } from 'socket.io-client';
 
+export type WorkspaceRole = 'owner' | 'editor' | 'viewer';
+
+export type WorkspaceMember = {
+  name: string;
+  role: WorkspaceRole;
+};
+
 export type FileNode = {
+  id: string;
   name: string;
   path: string;
   type: 'file' | 'folder';
   children?: FileNode[];
+  documentKey?: string;
 };
 
 export type BottomTab = 'terminal' | 'output';
@@ -17,12 +26,19 @@ export type OutputLog = {
   text: string;
 };
 
+// 状态栏只需要展示当前光标位置，因此把行列收敛成一个小而明确的类型。
+export type CursorPosition = {
+  line: number;
+  column: number;
+};
+
 export type SocketActionResult = {
   success: boolean;
   msg?: string;
   cleaned?: string;
   original?: string;
   isSanitized?: boolean;
+  deletedPaths?: string[];
 };
 
 export interface ServerToClientEvents {
@@ -31,6 +47,7 @@ export interface ServerToClientEvents {
   codeOutput: (output: string) => void;
   codeError: (error: string) => void;
   executionFinished: (exitCode: number) => void;
+  workspaceError: (message: string) => void;
   'terminal-out': (data: string) => void;
 }
 
@@ -61,10 +78,15 @@ export type IDEStore = {
   socket: WorkspaceSocket | null;
   activeFile: string;
   username: string;
+  role: WorkspaceRole;
   fileList: FileNode[];
   bottomTab: BottomTab;
   outputLogs: OutputLog[];
   isTerminalOpen: boolean;
+  terminalOutput: string;
+  isDirty: boolean;
+  savedAt: string | null;
+  saveError: string;
   setBottomTab: (tab: BottomTab) => void;
   addOutputLog: (type: OutputLogType, text: string) => void;
   clearOutputLogs: () => void;
@@ -76,4 +98,9 @@ export type IDEStore = {
   setSocket: (socket: WorkspaceSocket | null) => void;
   setActiveFile: (filename: string) => void;
   setUsername: (username: string) => void;
+  setRole: (role: WorkspaceRole) => void;
+  appendTerminalOutput: (text: string) => void;
+  clearTerminalOutput: () => void;
+  setDirty: (dirty: boolean) => void;
+  setSaveResult: (savedAt: string | null, error?: string) => void;
 };

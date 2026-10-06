@@ -19,14 +19,14 @@ export default function BottomPanel({
   currentSocket,
 }: BottomPanelProps) {
   return (
-    <div className="h-full w-full flex flex-col bg-white">
-      <div className="h-9 flex items-center bg-[#f8f9fa] border-t border-b border-gray-200 shrink-0 justify-between px-2">
+    <div className="bottom-panel-shell flex h-full w-full flex-col">
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-slate-700 bg-slate-900 px-2">
         <div className="flex h-full">
           <button
             onClick={() => setBottomTab('terminal')}
             className={`px-4 text-[12px] font-mono uppercase tracking-widest h-full flex items-center transition-colors ${bottomTab === 'terminal'
-              ? 'text-gray-800 border-b-2 border-blue-500 bg-white'
-              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 border-b-2 border-transparent'
+              ? 'text-white border-b-2 border-blue-400 bg-slate-800'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800 border-b-2 border-transparent'
               }`}
           >
             Terminal
@@ -35,8 +35,8 @@ export default function BottomPanel({
           <button
             onClick={() => setBottomTab('output')}
             className={`px-4 text-[12px] font-mono uppercase tracking-widest h-full flex items-center transition-colors ${bottomTab === 'output'
-              ? 'text-gray-800 border-b-2 border-blue-500 bg-white'
-              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100 border-b-2 border-transparent'
+              ? 'text-white border-b-2 border-blue-400 bg-slate-800'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800 border-b-2 border-transparent'
               }`}
           >
             Output
@@ -45,7 +45,7 @@ export default function BottomPanel({
 
         <button
           onClick={() => setIsTerminalOpen(false)}
-          className="text-gray-400 hover:text-gray-700 transition-colors"
+          className="px-2 text-slate-400 transition-colors hover:text-white"
         >
           ×
         </button>
@@ -61,13 +61,13 @@ export default function BottomPanel({
           {enableTerminal && currentSocket ? (
             <XTerminal currentSocket={currentSocket} />
           ) : (
-            <div className="h-full w-full flex flex-col items-center justify-center bg-gray-50 text-gray-500 font-mono text-sm">
-              <div className="text-lg font-semibold text-gray-700 mb-2">
+            <div className="flex h-full w-full flex-col items-center justify-center bg-slate-950 font-mono text-sm text-slate-400">
+              <div className="mb-2 text-base font-semibold text-slate-200">
                 Terminal Disabled in Public Demo
               </div>
               <div>Interactive shell is disabled for production security.</div>
               <div className="mt-1">Please use the Output panel to run JavaScript code.</div>
-              <div className="mt-4 text-xs text-gray-400">
+              <div className="mt-4 text-xs text-slate-500">
                 Full terminal support requires Docker-based sandbox isolation.
               </div>
             </div>
@@ -75,7 +75,7 @@ export default function BottomPanel({
         </div>
 
         <div
-          className={`absolute inset-0 bg-white transition-opacity duration-200 ${bottomTab === 'output'
+          className={`absolute inset-0 bg-slate-950 transition-opacity duration-200 ${bottomTab === 'output'
             ? 'z-10 opacity-100'
             : 'z-0 opacity-0 pointer-events-none'
             }`}

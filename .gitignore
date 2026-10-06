@@ -1,0 +1,12 @@
+# Local browser-test artifacts
+output/
+.playwright-cli/
+
+# Logs and generated build output
+debug.log
+*.log
+dist/
+**/dist/
+
+# Legacy local prototype
+server/

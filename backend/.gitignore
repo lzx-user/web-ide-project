@@ -3,6 +3,7 @@ dist/
 temp/
 .env
 .env.*
+!.env.example
 
 # SQLite 数据库文件
 data/*.db
