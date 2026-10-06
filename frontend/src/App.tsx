@@ -30,6 +30,7 @@ function App() {
   const activeFile = useIDEStore((state) => state.activeFile);
   const setActiveFile = useIDEStore((state) => state.setActiveFile);
   const outputLogs = useIDEStore((state) => state.outputLogs);
+  const role = useIDEStore((state) => state.role);
 
   // 目录树状态
   const fileList = useIDEStore((state) => state.fileList);
@@ -254,6 +255,7 @@ function App() {
         onRejectAI={ai.rejectSuggestion}
         cursorPosition={cursorPosition}
         outputLogs={outputLogs}
+        role={role}
       />
     </>
   );

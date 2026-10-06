@@ -6,7 +6,7 @@ import type { WebsocketProvider } from 'y-websocket';
 import { Bell, GitBranch, Plus, X } from 'lucide-react';
 
 import useIDEStore from '../store/useIDEStore';
-import type { CursorPosition, FileNode, OutputLog, WorkspaceSocket } from '../types/ide';
+import type { CursorPosition, FileNode, OutputLog, WorkspaceMember, WorkspaceRole, WorkspaceSocket } from '../types/ide';
 import { findNodeByPath } from '../utils/fileTree';
 import { getFileIcon } from '../utils/iconMap';
 import { getLanguageLabel } from '../utils/editorLanguage';
@@ -50,6 +50,7 @@ type WorkspaceLayoutProps = {
   selectionLabel: string;
   cursorPosition: CursorPosition;
   outputLogs: OutputLog[];
+  role: WorkspaceRole;
 };
 
 /** 把嵌套文件树摊平成标签栏需要的“文件路径列表”。 */
@@ -91,15 +92,17 @@ export default function WorkspaceLayout({
   selectionLabel,
   cursorPosition,
   outputLogs,
+  role,
 }: WorkspaceLayoutProps) {
   const isTerminalOpen = useIDEStore((state) => state.isTerminalOpen);
   const setIsTerminalOpen = useIDEStore((state) => state.setIsTerminalOpen);
   const bottomTab = useIDEStore((state) => state.bottomTab);
   const setBottomTab = useIDEStore((state) => state.setBottomTab);
-  const aiEnabled = import.meta.env.VITE_ENABLE_AI === 'true';
+  const canEdit = role !== 'viewer';
+  const aiEnabled = import.meta.env.VITE_ENABLE_AI === 'true' && canEdit;
   const [isAIOpen, setIsAIOpen] = useState(aiEnabled);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [members, setMembers] = useState<string[]>([]);
+  const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [openFiles, setOpenFiles] = useState<string[]>([]);
   const isDirty = useIDEStore((state) => state.isDirty);
   const savedAt = useIDEStore((state) => state.savedAt);
@@ -113,11 +116,15 @@ export default function WorkspaceLayout({
     }
 
     const updateMembers = () => {
-      const names = Array.from(provider.awareness.getStates().values()).map((state) => {
-        const user = (state as { user?: { name?: string } }).user;
-        return user?.name?.trim() || '协作者';
+      const onlineMembers = Array.from(provider.awareness.getStates().values()).map((state) => {
+        const user = (state as { user?: { name?: string; role?: WorkspaceRole } }).user;
+        const memberRole: WorkspaceRole = user?.role === 'owner' || user?.role === 'viewer' ? user.role : 'editor';
+        return {
+          name: user?.name?.trim() || '协作者',
+          role: memberRole,
+        };
       });
-      setMembers(names);
+      setMembers(onlineMembers);
     };
 
     updateMembers();
@@ -152,7 +159,7 @@ export default function WorkspaceLayout({
     });
   };
 
-  const enableTerminal = import.meta.env.VITE_ENABLE_TERMINAL === 'true';
+  const enableTerminal = import.meta.env.VITE_ENABLE_TERMINAL === 'true' && canEdit;
 
   return (
     <div className="workspace-shell flex h-screen w-screen flex-col overflow-hidden text-slate-800">
@@ -175,6 +182,7 @@ export default function WorkspaceLayout({
         isDirty={isDirty}
         savedAt={savedAt}
         aiEnabled={aiEnabled}
+        role={role}
       />
 
       <div className="workspace-body flex-1 overflow-hidden">
@@ -197,6 +205,7 @@ export default function WorkspaceLayout({
                 aiEnabled={aiEnabled}
                 isCollapsed={isSidebarCollapsed}
                 onToggleCollapsed={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
+                canEdit={canEdit}
               />
             </div>
           </Allotment.Pane>
@@ -244,7 +253,7 @@ export default function WorkspaceLayout({
                       </span>
                     </div>
                     <div className="editor-workspace relative">
-                      {isActiveFile ? <CodeEditor filename={activeFile} onMount={onEditorMount} /> : <EmptyEditorState />}
+                      {isActiveFile ? <CodeEditor filename={activeFile} onMount={onEditorMount} readOnly={!canEdit} /> : <EmptyEditorState />}
                     </div>
                   </div>
                 </Allotment.Pane>

@@ -30,9 +30,15 @@ export default function useWorkspaceActions({
   const [isSaving, setIsSaving] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const setSaveResult = useIDEStore((state) => state.setSaveResult);
+  const role = useIDEStore((state) => state.role);
+  const canEdit = role !== 'viewer';
 
   // 创建文件逻辑 只管emit事件，具体文件创建和同步逻辑由后端处理
   const handleCreateFile = ({ path, isFolder }: { path: string; isFolder: boolean }) => {
+    if (!canEdit) {
+      toast.error('当前为只读成员，不能创建文件');
+      return;
+    }
     if (!currentSocket) {
       toast.error('Socket 未连接， 无法创建');
       return;
@@ -91,6 +97,10 @@ export default function useWorkspaceActions({
 
   // 删除文件逻辑
   const handleDeleteFile = (filename: string) => {
+    if (!canEdit) {
+      toast.error('当前为只读成员，不能删除文件');
+      return;
+    }
     // 拦截确认，防止手滑误删
     if (!window.confirm(`确定要删除${filename}`)) return;
 
@@ -128,6 +138,10 @@ export default function useWorkspaceActions({
 
   // 保存代码逻辑
   const handleSave = async () => {
+    if (!canEdit) {
+      toast.error('当前为只读成员，不能保存修改');
+      return;
+    }
     // 如果没有房间号，直接拦截，不让它往后端发瞎请求
     if (!editorRef.current || isSaving || !roomId || !isActiveFile) {
       toast.error('请选择一个文件后再保存');
@@ -153,6 +167,10 @@ export default function useWorkspaceActions({
 
   // 运行代码逻辑
   const handleRun = async () => {
+    if (!canEdit) {
+      toast.error('当前为只读成员，不能运行代码');
+      return;
+    }
     if (import.meta.env.VITE_ENABLE_CODE_EXECUTION !== 'true') {
       toast.error('演示环境已关闭代码执行');
       return;

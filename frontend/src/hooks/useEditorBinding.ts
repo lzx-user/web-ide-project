@@ -102,6 +102,7 @@ export default function useEditorBinding({
     provider.awareness.setLocalStateField('user', {
       name: useIDEStore.getState().username || '前端开发工程师',
       color: stableUserColor(useIDEStore.getState().username || '协作者'),
+      role: useIDEStore.getState().role,
     });
 
     // 涂胶水：把当前文件的 Yjs 数据、Monaco 模型、以及光标同步绑定在一起

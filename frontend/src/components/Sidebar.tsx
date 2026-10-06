@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 
 import { getFileIcon } from '../utils/iconMap';
-import type { FileNode } from '../types/ide';
+import type { FileNode, WorkspaceMember } from '../types/ide';
 
 type CreatingState = {
   path: string | null;
@@ -35,6 +35,7 @@ type FileTreeNodeProps = {
   creatingState: CreatingState;
   setCreatingState: Dispatch<SetStateAction<CreatingState>>;
   handleCreateFile: (data: { path: string; isFolder: boolean }) => void;
+  canEdit: boolean;
 };
 
 /** 文件树只负责展示真实的服务端节点，创建和删除仍然交给 Socket action。 */
@@ -48,6 +49,7 @@ const FileTreeNode = memo(({
   creatingState,
   setCreatingState,
   handleCreateFile,
+  canEdit,
 }: FileTreeNodeProps) => {
   const [isOpen, setIsOpen] = useState(true);
   const isActive = activeFile === node.path;
@@ -69,14 +71,14 @@ const FileTreeNode = memo(({
           {getFileIcon(node.name, false, isActive)}
           <span className="sidebar-label truncate">{node.name}</span>
         </div>
-        <button
+        {canEdit ? <button
           type="button"
           onClick={(event) => { event.stopPropagation(); handleDeleteFile(node.path); }}
           className="shrink-0 rounded p-1 text-slate-400 opacity-0 transition-all hover:bg-slate-200 hover:text-rose-500 group-hover:opacity-100"
           aria-label={`删除 ${node.path}`}
         >
           <Trash2 size={14} />
-        </button>
+        </button> : null}
       </div>
     );
   }
@@ -130,6 +132,7 @@ const FileTreeNode = memo(({
               creatingState={creatingState}
               setCreatingState={setCreatingState}
               handleCreateFile={handleCreateFile}
+              canEdit={canEdit}
             />
           ))}
         </div>
@@ -144,12 +147,13 @@ type SidebarProps = {
   fileList: FileNode[];
   handleCreateFile: (data: { path: string; isFolder: boolean }) => void;
   handleDeleteFile: (path: string) => void;
-  members: string[];
+  members: WorkspaceMember[];
   isAIOpen: boolean;
   onToggleAI: () => void;
   aiEnabled: boolean;
   isCollapsed: boolean;
   onToggleCollapsed: () => void;
+  canEdit: boolean;
 };
 
 type MenuState = {
@@ -171,6 +175,7 @@ export default function Sidebar({
   aiEnabled,
   isCollapsed,
   onToggleCollapsed,
+  canEdit,
 }: SidebarProps) {
   const [creatingState, setCreatingState] = useState<CreatingState>({ path: null, type: null });
   const [menuState, setMenuState] = useState<MenuState>({ visible: false, x: 0, y: 0, node: null });
@@ -217,7 +222,9 @@ export default function Sidebar({
         </div>
 
         <div className="p-3">
-          {creatingState.path === 'root' ? (
+          {!canEdit ? (
+            <div className="rounded-md bg-slate-100 px-3 py-2 text-xs font-medium text-slate-500">只读模式：可浏览和跟随协作内容</div>
+          ) : creatingState.path === 'root' ? (
             <div className="relative flex items-center">
               <input
                 autoFocus
@@ -258,6 +265,7 @@ export default function Sidebar({
               creatingState={creatingState}
               setCreatingState={setCreatingState}
               handleCreateFile={handleCreateFile}
+              canEdit={canEdit}
             />
           )) : <p className="px-4 py-6 text-center text-xs leading-5 text-slate-400">当前房间暂无文件</p>}
         </div>
@@ -268,9 +276,10 @@ export default function Sidebar({
             <span className="text-slate-400">{members.length}</span>
           </div>
           {members.length > 0 ? members.slice(0, 8).map((member, index) => (
-            <div className="sidebar-member-row" key={`${member}-${index}`}>
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-[10px] font-bold text-blue-700">{member.trim().slice(0, 1).toUpperCase() || '协'}</span>
-              <span className="min-w-0 flex-1 truncate">{member}</span>
+            <div className="sidebar-member-row" key={`${member.name}-${index}`}>
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-[10px] font-bold text-blue-700">{member.name.trim().slice(0, 1).toUpperCase() || '协'}</span>
+              <span className="min-w-0 flex-1 truncate">{member.name}</span>
+              <span className="text-[9px] text-slate-400">{member.role === 'owner' ? '房主' : member.role === 'viewer' ? '只读' : '编辑'}</span>
               <span className="sidebar-member-dot" />
             </div>
           )) : <p className="pt-2 text-[11px] text-slate-400">正在同步成员状态…</p>}
@@ -284,14 +293,14 @@ export default function Sidebar({
 
       {menuState.visible && menuState.node && (
         <div style={{ top: menuState.y, left: menuState.x }} className="fixed z-50 flex w-48 flex-col rounded-lg border border-slate-200 bg-white py-1 text-sm text-slate-700 shadow-xl">
-          {menuState.node.type === 'folder' && (
+          {canEdit && menuState.node.type === 'folder' && (
             <>
               <button type="button" onClick={() => setCreatingState({ path: menuState.node!.path, type: 'file' })} className="px-4 py-2 text-left hover:bg-blue-50 hover:text-blue-600">新建文件</button>
               <button type="button" onClick={() => setCreatingState({ path: menuState.node!.path, type: 'folder' })} className="px-4 py-2 text-left hover:bg-blue-50 hover:text-blue-600">新建文件夹</button>
               <div className="mx-2 my-1 h-px bg-slate-200" />
             </>
           )}
-          <button type="button" onClick={() => handleDeleteFile(menuState.node!.path)} className="px-4 py-2 text-left text-rose-500 hover:bg-rose-50">删除</button>
+          {canEdit ? <button type="button" onClick={() => handleDeleteFile(menuState.node!.path)} className="px-4 py-2 text-left text-rose-500 hover:bg-rose-50">删除</button> : <span className="px-4 py-2 text-slate-400">只读成员无修改权限</span>}
         </div>
       )}
     </div>

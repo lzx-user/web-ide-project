@@ -41,6 +41,7 @@ export default function useWorkspaceSocket({
   const setActiveFile = useIDEStore((state) => state.setActiveFile);
   const isJoined = useIDEStore((state) => state.isJoined);
   const setJoined = useIDEStore((state) => state.setJoined);
+  const role = useIDEStore((state) => state.role);
   const [isConnected, setIsConnected] = useState(false);
   const [isYjsConnected, setIsYjsConnected] = useState(false);
   const [isYjsSynced, setIsYjsSynced] = useState(false);
@@ -56,10 +57,13 @@ export default function useWorkspaceSocket({
 
     // 2. 注入离线：将当前房间的 ydoc 绑定到浏览器的本地数据库
     // 挂载浏览器本地数据库，做离线历史合并树
-    const indexeddbProvider = new IndexeddbPersistence(`room-${roomId}`, ydoc);
+    // 只读成员不加载历史离线草稿，避免同一浏览器过去的编辑状态污染只读视图。
+    const indexeddbProvider = role === 'viewer'
+      ? null
+      : new IndexeddbPersistence(`room-${roomId}`, ydoc);
 
-    indexeddbProvider.on('synced', () => {
-      console.log('[Yjs] 📦 本地离线草稿加载完毕，且保留了完美的历史合并树');
+    indexeddbProvider?.on('synced', () => {
+      console.log('[Yjs] 📦 本地离线草稿加载完毕');
     });
 
     const token = localStorage.getItem(STORAGE_KEYS.TOKEN);
@@ -83,7 +87,9 @@ export default function useWorkspaceSocket({
       }
     );
     setYjsState({ ydoc, provider });
-    const markDirty = () => useIDEStore.getState().setDirty(true);
+    const markDirty = () => {
+      if (role !== 'viewer') useIDEStore.getState().setDirty(true);
+    };
     const handleYjsStatus = ({ status }: { status: string }) => setIsYjsConnected(status === 'connected');
     const handleYjsSync = (synced: boolean) => setIsYjsSynced(synced);
     ydoc.on('update', markDirty);
@@ -99,12 +105,12 @@ export default function useWorkspaceSocket({
       provider.off('sync', handleYjsSync);
       setIsYjsConnected(false);
       setIsYjsSynced(false);
-      indexeddbProvider.destroy();
+      indexeddbProvider?.destroy();
       provider.destroy();
       ydoc.destroy();
       console.log('[Yjs] 🛑 数据面连接已销毁');
     };
-  }, [roomId, isJoined]);
+  }, [roomId, isJoined, role]);
 
   // 2. Socket.io 控制面的监听与卸载
   useEffect(() => {

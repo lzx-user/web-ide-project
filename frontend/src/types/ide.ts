@@ -1,6 +1,13 @@
 import type { editor } from 'monaco-editor';
 import type { Socket } from 'socket.io-client';
 
+export type WorkspaceRole = 'owner' | 'editor' | 'viewer';
+
+export type WorkspaceMember = {
+  name: string;
+  role: WorkspaceRole;
+};
+
 export type FileNode = {
   id: string;
   name: string;
@@ -71,6 +78,7 @@ export type IDEStore = {
   socket: WorkspaceSocket | null;
   activeFile: string;
   username: string;
+  role: WorkspaceRole;
   fileList: FileNode[];
   bottomTab: BottomTab;
   outputLogs: OutputLog[];
@@ -90,6 +98,7 @@ export type IDEStore = {
   setSocket: (socket: WorkspaceSocket | null) => void;
   setActiveFile: (filename: string) => void;
   setUsername: (username: string) => void;
+  setRole: (role: WorkspaceRole) => void;
   appendTerminalOutput: (text: string) => void;
   clearTerminalOutput: () => void;
   setDirty: (dirty: boolean) => void;

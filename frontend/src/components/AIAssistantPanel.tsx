@@ -14,13 +14,14 @@ import {
   WandSparkles,
   X,
 } from 'lucide-react';
+import type { WorkspaceMember } from '../types/ide';
 
 export type AIAction = 'explain' | 'terminal-error' | 'fix' | 'optimize' | 'generate';
 type AITab = 'dialogue' | 'generate' | 'explain' | 'optimize' | 'room';
 
 type AIAssistantPanelProps = {
   roomId: string;
-  members: string[];
+  members: WorkspaceMember[];
   activeFile: string;
   selectionLabel: string;
   onClose: () => void;

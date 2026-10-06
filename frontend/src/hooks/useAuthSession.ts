@@ -4,120 +4,87 @@ import { STORAGE_KEYS } from '../utils/constants';
 import request from '../services/request';
 import { connectSocket } from '../services/socket';
 import useIDEStore from '../store/useIDEStore';
+import type { WorkspaceRole } from '../types/ide';
 
 // 登录、恢复登录、退出房间
 export default function useAuthSession() {
   const roomId = useIDEStore((state) => state.roomId);
   const currentSocket = useIDEStore((state) => state.socket);
-
   const setJoined = useIDEStore((state) => state.setJoined);
   const setRoomId = useIDEStore((state) => state.setRoomId);
   const setActiveFile = useIDEStore((state) => state.setActiveFile);
   const setCurrentSocket = useIDEStore((state) => state.setSocket);
   const setUsername = useIDEStore((state) => state.setUsername);
+  const setRole = useIDEStore((state) => state.setRole);
 
-  // 清除持久化状态的函数
   const clearPersistedState = useCallback(() => {
     localStorage.removeItem(STORAGE_KEYS.TOKEN);
     localStorage.removeItem(STORAGE_KEYS.ROOM_ID);
     localStorage.removeItem(STORAGE_KEYS.IS_JOINED);
     localStorage.removeItem(STORAGE_KEYS.ACTIVE_FILE);
     localStorage.removeItem(STORAGE_KEYS.USERNAME);
+    localStorage.removeItem(STORAGE_KEYS.ROLE);
   }, []);
 
-  // 登录/加入房间流程
-  const handleJoinRoom = useCallback(
-    async (usernameInput: string, roomIdInput: string, accessCodeInput: string) => {
-      try {
-        // 1. 调用 /api/join 后端接口，获取JWT Token
-        const { data } = await request.post('/join', {
-          username: usernameInput,
-          roomId: roomIdInput,
-          accessCode: accessCodeInput,
-        });
+  const handleJoinRoom = useCallback(async (usernameInput: string, roomIdInput: string, accessCodeInput: string) => {
+    try {
+      const { data } = await request.post('/join', {
+        username: usernameInput,
+        roomId: roomIdInput,
+        accessCode: accessCodeInput,
+      });
+      if (!data.success) throw new Error(data.message || '加入失败');
 
-        if (data.success) {
-          // 2. 持久化Token到 localStorage 并在 URL 中记录 roomId
-          localStorage.setItem(STORAGE_KEYS.TOKEN, data.token);
-          localStorage.setItem(STORAGE_KEYS.ROOM_ID, roomIdInput);
-          localStorage.setItem(STORAGE_KEYS.IS_JOINED, 'true');   // 持久化登陆状态
-          window.history.pushState({}, '', `?roomId=${roomIdInput}`);  // 用户刷新页面时能自动恢复到该房间
-
-          // 更新 Zustand 全局状态
-          setRoomId(roomIdInput);
-          // 昵称只写入内存状态，供 Yjs Awareness 展示真实成员，不改变现有持久化键。
-          setUsername(usernameInput);
-          localStorage.setItem(STORAGE_KEYS.USERNAME, usernameInput);
-
-          // 3. 使用获取到的Token和房间号建立WebSocket连接
-          const s = connectSocket(roomIdInput, data.token);
-          setCurrentSocket(s); // 赋值给 state，去触发底下的 useEffect
-
-          // 4. 进入 IDE 编辑器界面
-          setJoined(true);
-        } else {
-          alert(data.message);
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : '无法建立连接';
-        console.log('加入房间失败:', message);
-        toast.error('加入失败，请检查房间 ID 和访问口令');
-      }
-    },
-    [setRoomId, setCurrentSocket, setJoined, setUsername]
-  );
-
-  // 退出房间
-  const handleLeaveRoom = useCallback(() => {
-    // 1. 清理浏览器的本地存储缓存
-    clearPersistedState();
-
-    // 2. 告诉后端我要断开了
-    if (currentSocket) {
-      currentSocket.disconnect();
+      localStorage.setItem(STORAGE_KEYS.TOKEN, data.token);
+      localStorage.setItem(STORAGE_KEYS.ROOM_ID, roomIdInput);
+      localStorage.setItem(STORAGE_KEYS.IS_JOINED, 'true');
+      localStorage.setItem(STORAGE_KEYS.USERNAME, usernameInput);
+      window.history.pushState({}, '', `?roomId=${roomIdInput}`);
+      setRoomId(roomIdInput);
+      setUsername(usernameInput);
+      const role: WorkspaceRole = data.role === 'owner' || data.role === 'viewer' ? data.role : 'editor';
+      setRole(role);
+      localStorage.setItem(STORAGE_KEYS.ROLE, role);
+      const socket = connectSocket(roomIdInput, data.token);
+      setCurrentSocket(socket);
+      setJoined(true);
+    } catch (error) {
+      const message = (error as { response?: { data?: { message?: string } } }).response?.data?.message;
+      toast.error(message || '加入失败，请检查房间 ID 和访问口令');
+      throw error;
     }
+  }, [setRoomId, setCurrentSocket, setJoined, setUsername, setRole]);
 
-    // 3. 直接跳转回根路径，并刷新整个页面状态
-    // 瞬间清空所有的 React 状态，内存缓存，并重新渲染 Login 页面
+  const handleLeaveRoom = useCallback(() => {
+    clearPersistedState();
+    currentSocket?.disconnect();
     window.location.href = '/';
   }, [clearPersistedState, currentSocket]);
 
-  // 初始化：检查 URL 房间参数
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const roomFromUrl = urlParams.get('roomId');
-
-    // 检查本地存储是否有持久化状态
+    const roomFromUrl = new URLSearchParams(window.location.search).get('roomId');
     const savedToken = localStorage.getItem(STORAGE_KEYS.TOKEN);
     const savedRoomId = localStorage.getItem(STORAGE_KEYS.ROOM_ID);
     const savedIsJoined = localStorage.getItem(STORAGE_KEYS.IS_JOINED) === 'true';
+    if (roomFromUrl) setRoomId(roomFromUrl);
 
-    if (roomFromUrl) {
-      setRoomId(roomFromUrl);
-    }
-
-    // 如果有持久化状态且token有效，自动恢复登陆状态
+    let restoredSocket: ReturnType<typeof connectSocket> | null = null;
     if (savedToken && savedRoomId && savedIsJoined) {
       setRoomId(savedRoomId);
       setUsername(localStorage.getItem(STORAGE_KEYS.USERNAME) ?? '协作者');
+      const savedRole = localStorage.getItem(STORAGE_KEYS.ROLE);
+      setRole(savedRole === 'owner' || savedRole === 'viewer' ? savedRole : 'editor');
       setJoined(true);
-
-      // 读取上次离开前正在看的文件
       const savedActiveFile = localStorage.getItem(STORAGE_KEYS.ACTIVE_FILE);
-      if (savedActiveFile) {
-        setActiveFile(savedActiveFile);
-      }
-
-      // 自动建立 Socket 连接
-      const s = connectSocket(savedRoomId, savedToken);
-      setCurrentSocket(s);
+      if (savedActiveFile) setActiveFile(savedActiveFile);
+      restoredSocket = connectSocket(savedRoomId, savedToken);
+      setCurrentSocket(restoredSocket);
     }
-  }, [setRoomId, setJoined, setActiveFile, setCurrentSocket, setUsername]);
 
-  return {
-    roomId,
-    handleJoinRoom,
-    handleLeaveRoom,
-    clearPersistedState,
-  };
+    return () => {
+      restoredSocket?.disconnect();
+    };
+  }, [setRoomId, setJoined, setActiveFile, setCurrentSocket, setUsername, setRole]);
+
+  return { roomId, handleJoinRoom, handleLeaveRoom, clearPersistedState };
 }

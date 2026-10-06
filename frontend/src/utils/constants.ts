@@ -4,6 +4,7 @@ export const STORAGE_KEYS = {
   IS_JOINED: 'ide_isJoined',
   ACTIVE_FILE: 'ide_activeFile',
   USERNAME: 'ide_username',
+  ROLE: 'ide_role',
   // 使用函数生成动态的草稿 Key
   getDraftKey: (roomId: string, filename: string) => `draft-${roomId}-${filename}`,
 };
