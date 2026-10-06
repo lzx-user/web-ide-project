@@ -4,7 +4,7 @@
 
 ## 已实现能力
 
-- 服务端创建 UUID 房间并一次性返回访问口令；只保存 `crypto.scrypt` 哈希。
+- 服务端创建 UUID 房间并一次性返回房主、编辑和只读口令；只保存 `crypto.scrypt` 哈希。
 - HTTP、Socket.io、Yjs 统一校验绑定 `sessionId / roomId / username / role` 的 JWT。
 - PostgreSQL 保存 `rooms`、`room_files`、`yjs_snapshots`；Yjs 是文件内容唯一真相。
 - 文件使用不可变 `document_key` 作为 Y.Text 身份，删除并同名重建不会复用旧内容。
@@ -77,7 +77,7 @@ npm install
 npm run dev
 ```
 
-访问前端后先“创建新房间”，立即保存页面只展示一次的 `roomId` 和 `accessCode`，再用昵称加入。
+访问前端后先“创建新房间”，立即保存页面只展示一次的 `roomId` 和三种角色口令，再用昵称加入。
 
 ## 校验命令
 
@@ -96,8 +96,8 @@ npm run lint
 ## API 与实时协议
 
 - `GET /api/health`：服务与数据库状态，不返回凭据。
-- `POST /api/rooms`：创建房间，返回一次性访问口令。
-- `POST /api/join`：校验 `roomId + accessCode + username`，签发 JWT。
+- `POST /api/rooms`：创建房间，返回一次性房主/编辑/只读口令。
+- `POST /api/join`：校验 `roomId + accessCode + username`，签发房间 JWT。
 - `POST /api/save`：只相信 JWT 中的 roomId，立即保存当前 Y.Doc。
 - Socket.io：`createFile`、`deleteFile`、`executeCode` 及文件树/输出事件。
 - Yjs：`/yjs/:roomId?token=...`，URL 房间必须与 Token 房间一致。
