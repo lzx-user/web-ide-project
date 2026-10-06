@@ -2,7 +2,7 @@
 
 ## 文档范围与当前状态
 
-本文件描述当前仓库的真实结构和可执行约束。当前任务只建立项目规则，不要求也不允许借此修改页面或业务代码。
+本文件描述当前仓库的真实结构和可执行约束。
 
 当前仓库包含两个实际应用目录：
 
@@ -25,7 +25,7 @@
 ### 后端
 
 - 入口：`backend/index.ts`；Express 应用：`backend/src/app.ts`；配置：`backend/config.ts`。
-- HTTP API：`/api/health`、`POST /api/join`、受认证保护的 `POST /api/save`，路由位于 `backend/src/routes/`。
+- HTTP API：`/api/health`、`POST /api/rooms`、`POST /api/join`、受认证保护的 `POST /api/save` 与 `POST /api/ai/assist`，路由位于 `backend/src/routes/`。
 - 认证：JWT，配置和校验位于 `backend/config.ts` 与 `backend/src/middlewares/`；前端登录/加入流程位于 `frontend/src/hooks/useAuthSession.ts`。
 - Socket.io：`backend/src/socket/workspaceSocket.ts`。它校验握手 JWT、加入房间、同步文件树，并处理创建文件、删除文件、执行代码等事件。
 - Yjs：`backend/src/yjs/yjsServer.ts` 使用 `ws` 的 HTTP upgrade；`/socket.io` 会被排除，Yjs 连接使用 `/yjs/:roomId?token=...`，再交给 `y-websocket`。
@@ -58,11 +58,10 @@
 - 不改 API 路径、Socket 事件名、Yjs URL 结构、localStorage key 或环境变量名，除非同时完成兼容迁移并补充验收说明。
 - 每个实时资源都要有对称清理：Socket 监听、Yjs provider、Y.Doc、IndexedDB persistence、Monaco binding。
 - 页面改动后至少手工验证：加入工作区、文件树、编辑器输入同步、保存、运行、断线重连、错误提示和终端开关。
-- 本次“建立 AGENTS.md”任务不得修改页面、业务逻辑或依赖文件。
 
 ## AI 功能开发规则
 
-当前仓库没有 AI 路由、AI service、OpenAI SDK、AI UI 或 AI 环境变量；`frontend/package.json` 和 `backend/package.json` 中也没有 OpenAI 依赖。不得把“AI 已存在”写进文档或演示。
+当前仓库已有后端 AI 路由与 service、前端 AI 助手面板和相关环境变量。后端通过兼容 OpenAI Chat Completions 的 HTTP API 调用模型，没有安装 OpenAI SDK。AI 生成的代码只作为待确认建议展示，用户确认后才写入 Monaco，且不会自动保存或执行。
 
 以后增加 AI 功能时：
 
@@ -81,7 +80,7 @@ npm run typecheck   # tsc --noEmit
 npm run build       # tsc，输出 dist/
 npm run dev         # tsx watch index.ts
 npm start            # node dist/index.js（先执行 npm run build）
-npm test             # 当前只是占位脚本，会以失败退出，不是真实测试套件
+npm test             # 使用 Node test runner 执行安全与权限测试
 ```
 
 ### frontend/
@@ -117,7 +116,7 @@ npm run format      # prettier --write ...
 
 ## 环境变量和密钥安全
 
-- 后端示例变量来自 `backend/.env.example`：`NODE_ENV`、`PORT`、`HOST`、`CORS_ORIGIN`、`JWT_SECRET`、`JWT_EXPIRES`、`ENABLE_TERMINAL`。
+- 后端示例变量来自 `backend/.env.example`，包括服务、数据库、JWT、AI、代码执行、终端和工作区限制配置；新增变量时必须同步维护示例文件。
 - `JWT_SECRET` 必须至少 32 个字符；真实值只放在本地或部署平台 Secret，不打印、不提交、不写入前端。
 - 前端公开变量来自 `.env`、`.env.development`、`.env.production`：`VITE_API_BASE_URL`、`VITE_WS_URL`、`VITE_YJS_URL`、`VITE_ENABLE_TERMINAL`。所有 `VITE_*` 都会进入浏览器，不能放秘密。
 - 生产环境 API/Socket 使用 HTTPS，Yjs 使用 WSS；三者应指向同一后端部署，避免跨环境连接。
@@ -131,4 +130,4 @@ npm run format      # prettier --write ...
 3. 修改后端协议时，额外检查 `/api/health`、`/api/join`、`/api/save`，并按影响范围验证 Socket.io 和 Yjs 连接。
 4. 修改页面时，启动前后端开发命令并手工验证加入、编辑、同步、保存、运行、重连和错误处理；不要只以编译通过作为完成标准。
 5. 检查生产环境变量、CORS、HTTPS/WSS、日志和密钥是否安全；确认没有把 `.env` 或构建产物误提交。
-6. 在提交说明中列出修改文件、执行的命令、已知限制和未实现功能。当前仓库没有真实自动化测试套件，必须如实说明。
+6. 在提交说明中列出修改文件、执行的命令、已知限制和未实现功能。当前自动化测试主要覆盖安全与权限逻辑，尚未形成完整的接口和浏览器 E2E 测试套件，必须如实说明。
