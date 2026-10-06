@@ -1,4 +1,5 @@
 import type { FileTreeNode } from '../repositories/fileRepository.js';
+import type { WorkspaceRole } from '../auth/roles.js';
 
 export type SocketAck = (result: {
   success: boolean;
@@ -33,6 +34,6 @@ export interface SocketData {
     sessionId: string;
     username: string;
     roomId: string;
-    role: 'owner' | 'editor';
+    role: WorkspaceRole;
   };
 }

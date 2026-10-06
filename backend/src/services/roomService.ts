@@ -1,7 +1,8 @@
 import { randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 
-import { createRoomRecord, findRoom } from '../repositories/roomRepository.js';
+import type { WorkspaceRole } from '../auth/roles.js';
+import { createRoomRecord, findRoom, listRoomAccessCodes } from '../repositories/roomRepository.js';
 
 const scrypt = promisify(scryptCallback);
 const SCRYPT_KEY_LENGTH = 64;
@@ -26,28 +27,50 @@ export function normalizeUsername(input: unknown): string {
   return username;
 }
 
-export async function createRoom(): Promise<{ roomId: string; accessCode: string }> {
+export async function createRoom(): Promise<{
+  roomId: string;
+  ownerAccessCode: string;
+  editorAccessCode: string;
+  viewerAccessCode: string;
+}> {
   const roomId = randomUUID();
-  const accessCode = randomBytes(12).toString('base64url');
-  await createRoomRecord(roomId, await hashAccessCode(accessCode), {
+  const ownerAccessCode = randomBytes(12).toString('base64url');
+  const editorAccessCode = randomBytes(12).toString('base64url');
+  const viewerAccessCode = randomBytes(12).toString('base64url');
+  await createRoomRecord(roomId, await Promise.all(([
+    ['owner', ownerAccessCode],
+    ['editor', editorAccessCode],
+    ['viewer', viewerAccessCode],
+  ] as const).map(async ([role, accessCode]) => ({
+    role,
+    accessCodeHash: await hashAccessCode(accessCode),
+  }))), {
     id: randomUUID(),
     documentKey: randomUUID(),
   });
-  return { roomId, accessCode };
+  return { roomId, ownerAccessCode, editorAccessCode, viewerAccessCode };
 }
 
 export async function authorizeRoomJoin(input: {
   username?: unknown;
   roomId?: unknown;
   accessCode?: unknown;
-}): Promise<{ username: string; roomId: string }> {
+}): Promise<{ username: string; roomId: string; role: WorkspaceRole }> {
   const username = normalizeUsername(input.username);
   const roomId = String(input.roomId ?? '').trim();
   const accessCode = String(input.accessCode ?? '');
   if (!/^[0-9a-f-]{36}$/i.test(roomId) || !accessCode) throw new Error('房间 ID 或访问口令无效');
   const room = await findRoom(roomId);
-  if (!room || room.status !== 'active' || !(await verifyAccessCode(accessCode, room.accessCodeHash))) {
-    throw new Error('房间不存在或访问口令错误');
+  if (!room || room.status !== 'active') throw new Error('房间不存在或已被冻结');
+
+  const roleCodes = await listRoomAccessCodes(roomId);
+  for (const candidate of roleCodes) {
+    if (await verifyAccessCode(accessCode, candidate.accessCodeHash)) {
+      return { username, roomId, role: candidate.role };
+    }
   }
-  return { username, roomId };
+  if (room.accessCodeHash && await verifyAccessCode(accessCode, room.accessCodeHash)) {
+    return { username, roomId, role: 'editor' };
+  }
+  throw new Error('访问口令错误');
 }

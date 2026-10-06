@@ -1,11 +1,11 @@
 import { Router } from 'express';
 
-import authMiddleware from '../middlewares/authMiddleware.js';
+import authMiddleware, { requireWorkspaceEditor } from '../middlewares/authMiddleware.js';
 import { flushRoomDocument } from '../yjs/yjsServer.js';
 
 const router = Router();
 
-router.post('/api/save', authMiddleware, async (req, res) => {
+router.post('/api/save', authMiddleware, requireWorkspaceEditor, async (req, res) => {
   try {
     const result = await flushRoomDocument(req.user.roomId);
     res.json({ success: true, message: '协同文档已持久化', ...result });

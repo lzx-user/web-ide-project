@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import { canEditWorkspace } from '../auth/roles.js';
 import { verifyRoomToken } from '../services/authService.js';
 
 export default function authMiddleware(
@@ -20,4 +21,16 @@ export default function authMiddleware(
   } catch {
     res.status(401).json({ success: false, message: 'Token 无效或已过期' });
   }
+}
+
+export function requireWorkspaceEditor(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (!canEditWorkspace(req.user.role)) {
+    res.status(403).json({ success: false, message: '当前为只读成员，无权执行此操作' });
+    return;
+  }
+  next();
 }

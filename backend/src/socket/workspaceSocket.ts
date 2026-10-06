@@ -1,6 +1,7 @@
 import type { Server } from 'socket.io';
 
 import config from '../../config.js';
+import { canEditWorkspace } from '../auth/roles.js';
 import PtyManager from '../pty/PtyManager.js';
 import { createRoomFile, deleteRoomFile, listRoomFiles } from '../repositories/fileRepository.js';
 import { verifyRoomToken } from '../services/authService.js';
@@ -24,7 +25,8 @@ export default function registerWorkspaceSocket(io: WorkspaceServer): void {
   });
 
   io.on('connection', (socket) => {
-    const { roomId, username } = socket.data.user;
+    const { roomId, username, role } = socket.data.user;
+    const canEdit = canEditWorkspace(role);
     socket.join(roomId);
     console.log(`[房间 ${roomId}] 用户 ${username} 已连接`);
     void listRoomFiles(roomId).then((tree) => socket.emit('initCodePackage', tree)).catch((error) => {
@@ -32,6 +34,10 @@ export default function registerWorkspaceSocket(io: WorkspaceServer): void {
     });
 
     socket.on('createFile', async ({ filename, isFolder }, callback) => {
+      if (!canEdit) {
+        callback?.({ success: false, msg: '当前为只读成员，不能创建文件' });
+        return;
+      }
       try {
         const result = await createRoomFile(roomId, filename, isFolder);
         callback?.({ success: true, cleaned: result.normalizedPath });
@@ -43,6 +49,10 @@ export default function registerWorkspaceSocket(io: WorkspaceServer): void {
     });
 
     socket.on('deleteFile', async ({ filename }, callback) => {
+      if (!canEdit) {
+        callback?.({ success: false, msg: '当前为只读成员，不能删除文件' });
+        return;
+      }
       try {
         const result = await deleteRoomFile(roomId, filename);
         await removeRoomDocuments(roomId, result.documentKeys);
@@ -54,6 +64,12 @@ export default function registerWorkspaceSocket(io: WorkspaceServer): void {
     });
 
     socket.on('executeCode', ({ code, filename }) => {
+      if (!canEdit) {
+        socket.emit('executionStarted');
+        socket.emit('codeError', '当前为只读成员，不能运行代码');
+        socket.emit('executionFinished', 1);
+        return;
+      }
       io.to(roomId).emit('executionStarted');
       if (!config.features.codeExecution) {
         io.to(roomId).emit('codeError', '演示环境已关闭代码执行；代码不会发送给本机子进程。');
@@ -69,7 +85,7 @@ export default function registerWorkspaceSocket(io: WorkspaceServer): void {
       });
     });
 
-    const userPty = config.features.terminal ? new PtyManager(socket, roomId) : null;
+    const userPty = config.features.terminal && canEdit ? new PtyManager(socket, roomId) : null;
     if (userPty) socket.on('terminal-resize', ({ cols, rows }) => userPty.resize(cols, rows));
     socket.on('disconnect', () => {
       console.log(`[房间 ${roomId}] 用户 ${username} 已断开连接`);

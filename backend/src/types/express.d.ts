@@ -5,7 +5,7 @@ declare global {
         sessionId: string;
         username: string;
         roomId: string;
-        role: 'owner' | 'editor';
+        role: import('../auth/roles.js').WorkspaceRole;
       };
     }
   }

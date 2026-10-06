@@ -1,6 +1,7 @@
 import type { Server as HttpServer, IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import WebSocket, { WebSocketServer } from 'ws';
+import { canEditWorkspace } from '../auth/roles.js';
 
 import { transaction } from '../db/pool.js';
 import { markRoomSaved } from '../repositories/roomRepository.js';
@@ -33,6 +34,41 @@ const utils = require('y-websocket/bin/utils') as {
   getYDoc: (docName: string, gc?: boolean) => SharedDoc;
   docs: Map<string, SharedDoc>;
 };
+const decoding = require('lib0/dist/decoding.cjs') as {
+  createDecoder: (data: Uint8Array) => unknown;
+  readVarUint: (decoder: unknown) => number;
+};
+
+const YJS_MESSAGE_SYNC = 0;
+const YJS_SYNC_STEP_1 = 0;
+
+/** Viewers may request server state and publish awareness, but cannot submit document state. */
+export function isYjsDocumentMutation(data: WebSocket.RawData): boolean {
+  try {
+    const bytes = data instanceof ArrayBuffer
+      ? new Uint8Array(data)
+      : Array.isArray(data)
+        ? new Uint8Array(Buffer.concat(data))
+        : new Uint8Array(data as Buffer);
+    const decoder = decoding.createDecoder(bytes);
+    const messageType = decoding.readVarUint(decoder);
+    if (messageType !== YJS_MESSAGE_SYNC) return false;
+    return decoding.readVarUint(decoder) !== YJS_SYNC_STEP_1;
+  } catch {
+    return true;
+  }
+}
+
+function makeConnectionReadOnly(ws: WebSocket): void {
+  const messageListeners = ws.listeners('message');
+  ws.removeAllListeners('message');
+  ws.on('message', (data, isBinary) => {
+    if (isYjsDocumentMutation(data)) return;
+    for (const listener of messageListeners) {
+      listener.call(ws, data, isBinary);
+    }
+  });
+}
 
 const bindingPromises = new Map<string, Promise<void>>();
 const flushTimers = new Map<string, NodeJS.Timeout>();
@@ -123,6 +159,9 @@ export default function registerYjsServer(server: HttpServer): void {
   yjsWss.on('connection', (ws, request) => {
     const docName = request.url?.slice(1).split('?')[0] || 'default-room';
     utils.setupWSConnection(ws, request, { docName });
+    if ((request as IncomingMessage & { workspaceReadOnly?: boolean }).workspaceReadOnly) {
+      makeConnectionReadOnly(ws);
+    }
   });
 
   server.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
@@ -147,6 +186,7 @@ export default function registerYjsServer(server: HttpServer): void {
         }
         await prepareRoomDocument(roomFromUrl);
         request.url = `/${roomFromUrl}`;
+        (request as IncomingMessage & { workspaceReadOnly?: boolean }).workspaceReadOnly = !canEditWorkspace(payload.role);
         yjsWss.handleUpgrade(request, socket, head, (ws) => yjsWss.emit('connection', ws, request));
       } catch (error) {
         console.error('[Yjs 鉴权] 连接失败：', error instanceof Error ? error.message : '未知错误');

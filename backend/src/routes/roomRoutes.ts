@@ -19,13 +19,11 @@ router.post('/api/rooms', rateLimit({ windowMs: 60_000, max: 5, keyPrefix: 'crea
 router.post('/api/join', rateLimit({ windowMs: 60_000, max: 10, keyPrefix: 'join' }), async (req, res) => {
   try {
     const session = await authorizeRoomJoin(req.body ?? {});
-    const role = 'editor' as const;
     res.json({
       success: true,
       message: '加入房间成功',
-      token: signRoomToken({ ...session, sessionId: randomUUID(), role }),
+      token: signRoomToken({ ...session, sessionId: randomUUID() }),
       ...session,
-      role,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : '加入房间失败';

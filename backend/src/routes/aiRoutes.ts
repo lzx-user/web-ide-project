@@ -1,6 +1,6 @@
 import { Router } from 'express';
 
-import authMiddleware from '../middlewares/authMiddleware.js';
+import authMiddleware, { requireWorkspaceEditor } from '../middlewares/authMiddleware.js';
 import { rateLimit } from '../middlewares/rateLimit.js';
 import { requestAIAssistance } from '../services/aiService.js';
 import type { AIAction, AIAssistRequest } from '../types/ai.js';
@@ -8,7 +8,7 @@ import type { AIAction, AIAssistRequest } from '../types/ai.js';
 const router = Router();
 const actions = new Set<AIAction>(['explain', 'terminal-error', 'fix', 'optimize', 'generate']);
 
-router.post('/api/ai/assist', rateLimit({ windowMs: 60_000, max: 12, keyPrefix: 'ai' }), authMiddleware, async (req, res) => {
+router.post('/api/ai/assist', rateLimit({ windowMs: 60_000, max: 12, keyPrefix: 'ai' }), authMiddleware, requireWorkspaceEditor, async (req, res) => {
   const input = req.body as Partial<AIAssistRequest>;
 
   if (!input.action || !actions.has(input.action)) {
