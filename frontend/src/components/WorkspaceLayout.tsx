@@ -10,6 +10,7 @@ import type { CursorPosition, FileNode, OutputLog, WorkspaceMember, WorkspaceRol
 import { findNodeByPath } from '../utils/fileTree';
 import { getFileIcon } from '../utils/iconMap';
 import { getLanguageLabel } from '../utils/editorLanguage';
+import { STORAGE_KEYS } from '../utils/constants';
 import AIAssistantPanel, { type AIAction } from './AIAssistantPanel';
 import BottomPanel from './BottomPanel';
 import CodeEditor from './CodeEditor';
@@ -37,6 +38,8 @@ type WorkspaceLayoutProps = {
   onLeave: () => void;
   onCreateFile: (data: { path: string; isFolder: boolean }) => void;
   onDeleteFile: (filename: string) => void;
+  onMoveFile: (sourcePath: string, targetPath: string) => void;
+  onOpenSearchResult: (path: string, line: number) => void;
   provider: WebsocketProvider | null;
   onAIRequest: (action: AIAction, prompt: string) => Promise<void>;
   aiLoading: boolean;
@@ -79,6 +82,8 @@ export default function WorkspaceLayout({
   onLeave,
   onCreateFile,
   onDeleteFile,
+  onMoveFile,
+  onOpenSearchResult,
   provider,
   onAIRequest,
   aiLoading,
@@ -103,7 +108,13 @@ export default function WorkspaceLayout({
   const [isAIOpen, setIsAIOpen] = useState(aiEnabled);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
-  const [openFiles, setOpenFiles] = useState<string[]>([]);
+  const [openFiles, setOpenFiles] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEYS.getOpenFilesKey(roomId)) ?? '[]') as string[];
+    } catch {
+      return [];
+    }
+  });
   const isDirty = useIDEStore((state) => state.isDirty);
   const savedAt = useIDEStore((state) => state.savedAt);
   const saveError = useIDEStore((state) => state.saveError);
@@ -137,6 +148,10 @@ export default function WorkspaceLayout({
     // 只有用户真正打开过的文件才进入标签栏，避免把整个文件树伪装成“已打开”。
     setOpenFiles((current) => current.includes(activeFile) ? current : [...current, activeFile]);
   }, [activeFile, fileList]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.getOpenFilesKey(roomId), JSON.stringify(openFiles.slice(-20)));
+  }, [openFiles, roomId]);
 
   // 文件树和日志未变化时复用计算结果，减少拖动面板时的重复遍历。
   const availableFiles = useMemo(() => flattenFiles(fileList), [fileList]);
@@ -199,6 +214,11 @@ export default function WorkspaceLayout({
                 fileList={fileList}
                 handleCreateFile={onCreateFile}
                 handleDeleteFile={onDeleteFile}
+                handleMoveFile={onMoveFile}
+                onOpenSearchResult={onOpenSearchResult}
+                provider={provider}
+                currentSocket={currentSocket}
+                role={role}
                 members={members}
                 isAIOpen={isAIOpen}
                 onToggleAI={() => setIsAIOpen((open) => !open)}

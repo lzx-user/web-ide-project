@@ -39,6 +39,16 @@ export type SocketActionResult = {
   original?: string;
   isSanitized?: boolean;
   deletedPaths?: string[];
+  movedPaths?: Array<{ oldPath: string; newPath: string }>;
+  version?: WorkspaceVersionSummary;
+  versions?: WorkspaceVersionSummary[];
+};
+
+export type WorkspaceVersionSummary = {
+  id: string;
+  label: string;
+  createdBy: string;
+  createdAt: string;
 };
 
 export interface ServerToClientEvents {
@@ -48,6 +58,7 @@ export interface ServerToClientEvents {
   codeError: (error: string) => void;
   executionFinished: (exitCode: number) => void;
   workspaceError: (message: string) => void;
+  versionHistoryChanged: (versions: WorkspaceVersionSummary[]) => void;
   'terminal-out': (data: string) => void;
 }
 
@@ -58,6 +69,19 @@ export interface ClientToServerEvents {
   ) => void;
   deleteFile: (
     data: { filename: string },
+    callback?: (result: SocketActionResult) => void,
+  ) => void;
+  moveFile: (
+    data: { sourcePath: string; targetPath: string },
+    callback?: (result: SocketActionResult) => void,
+  ) => void;
+  listVersions: (callback?: (result: SocketActionResult) => void) => void;
+  createVersion: (
+    data: { label?: string },
+    callback?: (result: SocketActionResult) => void,
+  ) => void;
+  restoreVersion: (
+    data: { versionId: string },
     callback?: (result: SocketActionResult) => void,
   ) => void;
   executeCode: (data: { code: string; filename: string }) => void;

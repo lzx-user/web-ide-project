@@ -77,11 +77,14 @@ export default function useEditorBinding({
       const newModel = monaco.editor.createModel(
         '', // 初始给空字符串即可，Yjs 连上后会自动把服务器的真实内容塞进来
         getLanguageByFilename(targetFile),
-        monaco.Uri.parse(`file://${targetFile}`) // 根据targetFile的后缀判断是css还是json
+        monaco.Uri.from({ scheme: 'file', path: `/${activeDocumentKey}/${targetFile}` })
       );
       targetCache = { model: newModel, viewState: null };
       fileCacheMap.current.set(targetFile, targetCache); // 存入缓存
     }
+
+    // 文件改名可能同时改变扩展名，复用模型时同步更新 Monaco 语言模式。
+    monaco.editor.setModelLanguage(targetCache.model, getLanguageByFilename(targetFile));
 
     // 3. 切换编辑器模型并恢复视图
     editor.setModel(targetCache.model);

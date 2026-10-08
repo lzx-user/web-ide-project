@@ -82,7 +82,7 @@ export default function useWorkspaceActions({
       }
 
       // 创建失败（如黑客越界攻击、重名、非法路径），弹出醒目的红色错误提示！
-      toast.error(`创建文件失败: ${response.msg}`, {
+      toast.error(`创建${isFolder ? '文件夹' : '文件'}失败: ${response.msg}`, {
         id: 'create-file-fail',  // 设置唯一id，防止连击时弹出重叠的堆叠层
         duration: 4000,
         style: {
@@ -136,6 +136,31 @@ export default function useWorkspaceActions({
     });
   };
 
+  const handleMoveFile = (sourcePath: string, targetPath: string) => {
+    if (!canEdit) {
+      toast.error('当前为只读成员，不能移动或重命名文件');
+      return;
+    }
+    if (!currentSocket) {
+      toast.error('Socket 未连接，无法更新路径');
+      return;
+    }
+    currentSocket.emit('moveFile', { sourcePath, targetPath }, (response) => {
+      if (!response?.success) {
+        toast.error(`操作失败: ${response?.msg ?? '服务无响应'}`);
+        return;
+      }
+      for (const moved of response.movedPaths ?? []) {
+        const cached = fileCacheMap.current.get(moved.oldPath);
+        fileCacheMap.current.delete(moved.oldPath);
+        if (cached) fileCacheMap.current.set(moved.newPath, cached);
+      }
+      // 当前文件路径由文件树广播按稳定 documentKey 一次性迁移，
+      // 避免先切 activeFile、后到新文件树时短暂卸载 Monaco。
+      toast.success('路径已更新');
+    });
+  };
+
   // 保存代码逻辑
   const handleSave = async () => {
     if (!canEdit) {
@@ -153,13 +178,22 @@ export default function useWorkspaceActions({
 
     try {
       const { data } = await request.post('/save');
+      const savedAt = data.savedAt ?? new Date().toISOString();
 
       toast.success('保存成功', { id: loadingToast });
-      setSaveResult(data.savedAt ?? new Date().toISOString());
+      setSaveResult(savedAt);
+      localStorage.setItem(
+        STORAGE_KEYS.getSaveStateKey(roomId),
+        JSON.stringify({ isDirty: false, savedAt }),
+      );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '未知错误';
       toast.error(`保存失败: ${message}`, { id: loadingToast });
       setSaveResult(null, message);
+      localStorage.setItem(
+        STORAGE_KEYS.getSaveStateKey(roomId),
+        JSON.stringify({ isDirty: true, savedAt: null }),
+      );
     } finally {
       setIsSaving(false);
     }
@@ -194,6 +228,7 @@ export default function useWorkspaceActions({
     setIsRunning,
     handleCreateFile,
     handleDeleteFile,
+    handleMoveFile,
     handleSave,
     handleRun,
   };
