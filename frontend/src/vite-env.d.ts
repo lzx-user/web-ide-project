@@ -2,6 +2,8 @@
 
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL: string;
+  readonly VITE_ENABLE_AI?: string;
+  readonly VITE_ENABLE_CODE_EXECUTION?: string;
   readonly VITE_ENABLE_TERMINAL?: string;
 }
 

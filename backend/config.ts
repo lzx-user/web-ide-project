@@ -51,6 +51,7 @@ const config = {
     ssl: process.env.DATABASE_SSL === 'true' || isProd,
   },
   features: {
+    ai: process.env.ENABLE_AI === 'true',
     codeExecution: process.env.ENABLE_CODE_EXECUTION === 'true' && !isProd,
     terminal: process.env.ENABLE_TERMINAL === 'true' && !isProd,
   },

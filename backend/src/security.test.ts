@@ -32,6 +32,7 @@ test('房间 Token 保留会话边界且不能被当成其他房间', () => {
 test('危险功能不会在生产环境启用，终端默认关闭', () => {
   assert.equal(config.features.codeExecution && config.env.isProd, false);
   assert.equal(config.features.terminal, false);
+  assert.equal(config.features.ai, false);
 });
 
 test('本地代码运行仅接受 JavaScript 和 TypeScript 文件', () => {
