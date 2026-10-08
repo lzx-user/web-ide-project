@@ -9,15 +9,25 @@ import { loadSnapshot, saveSnapshot } from '../repositories/yjsSnapshotRepositor
 import { verifyRoomToken } from '../services/authService.js';
 import config from '../../config.js';
 
-type SharedMap<T> = { delete: (key: string) => void; values: () => IterableIterator<T> };
-type SharedText = { length: number };
+type SharedMap<T> = {
+  delete: (key: string) => void;
+  entries: () => IterableIterator<[string, T]>;
+  get: (key: string) => T | undefined;
+  keys: () => IterableIterator<string>;
+  set: (key: string, value: T) => void;
+  values: () => IterableIterator<T>;
+};
+type SharedText = { delete: (index: number, length: number) => void; insert: (index: number, text: string) => void; length: number; toString: () => string };
 type SharedDoc = {
+  destroy: () => void;
   name: string;
   on: (event: 'update', listener: (update: Uint8Array, origin: unknown) => void) => void;
   getMap: <T>(name: string) => SharedMap<T>;
-  transact: (work: () => void) => void;
+  transact: (work: () => void, origin?: unknown) => void;
 };
 const Y = require('yjs') as {
+  Doc: new () => SharedDoc;
+  Text: new () => SharedText;
   encodeStateAsUpdate: (doc: SharedDoc) => Uint8Array;
   encodeStateVector: (doc: SharedDoc) => Uint8Array;
   applyUpdate: (doc: SharedDoc, update: Uint8Array, origin?: unknown) => void;
@@ -137,6 +147,39 @@ export async function flushRoomDocument(roomId: string) {
   if (timer) clearTimeout(timer);
   flushTimers.delete(roomId);
   return persistDocument(roomId, doc);
+}
+
+export async function captureRoomDocument(roomId: string): Promise<Uint8Array> {
+  const doc = await prepareRoomDocument(roomId);
+  await flushRoomDocument(roomId);
+  return Y.encodeStateAsUpdate(doc);
+}
+
+export async function restoreRoomDocument(roomId: string, snapshot: Uint8Array) {
+  const doc = await prepareRoomDocument(roomId);
+  const restoredDoc = new Y.Doc();
+  Y.applyUpdate(restoredDoc, snapshot, 'version-preview');
+  const restoredFiles = restoredDoc.getMap<SharedText>('files');
+  const currentFiles = doc.getMap<SharedText>('files');
+
+  doc.transact(() => {
+    const restoredKeys = new Set(restoredFiles.keys());
+    for (const key of currentFiles.keys()) {
+      if (!restoredKeys.has(key)) currentFiles.delete(key);
+    }
+    for (const [key, restoredText] of restoredFiles.entries()) {
+      let currentText = currentFiles.get(key);
+      if (!currentText) {
+        currentText = new Y.Text();
+        currentFiles.set(key, currentText);
+      }
+      if (currentText.length > 0) currentText.delete(0, currentText.length);
+      const content = restoredText.toString();
+      if (content) currentText.insert(0, content);
+    }
+  }, 'version-restore');
+  restoredDoc.destroy();
+  return flushRoomDocument(roomId);
 }
 
 export async function removeRoomDocuments(roomId: string, documentKeys: string[]) {
