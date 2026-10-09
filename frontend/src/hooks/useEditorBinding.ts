@@ -4,7 +4,6 @@ import { MonacoBinding } from 'y-monaco';
 import type { OnMount } from '@monaco-editor/react';
 import type { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
-import useIDEStore from '../store/useIDEStore';
 import { STORAGE_KEYS } from '../utils/constants';
 import { getLanguageByFilename } from '../utils/editorLanguage';
 import type { EditorCacheEntry } from '../types/ide';
@@ -101,13 +100,6 @@ export default function useEditorBinding({
       files.set(activeDocumentKey, ytext);
     }
 
-    // 向 Awareness 协议注入自定义身份（用于渲染别人屏幕上的光标名字）
-    provider.awareness.setLocalStateField('user', {
-      name: useIDEStore.getState().username || '前端开发工程师',
-      color: stableUserColor(useIDEStore.getState().username || '协作者'),
-      role: useIDEStore.getState().role,
-    });
-
     // 涂胶水：把当前文件的 Yjs 数据、Monaco 模型、以及光标同步绑定在一起
     const binding = new MonacoBinding(
       ytext,
@@ -137,10 +129,4 @@ export default function useEditorBinding({
     prevFileRef,
     bindingRef,
   ]);
-}
-
-function stableUserColor(username: string): string {
-  let hash = 0;
-  for (const character of username) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
-  return `hsl(${Math.abs(hash) % 360} 68% 48%)`;
 }

@@ -127,15 +127,19 @@ export default function WorkspaceLayout({
     }
 
     const updateMembers = () => {
-      const onlineMembers = Array.from(provider.awareness.getStates().values()).map((state) => {
-        const user = (state as { user?: { name?: string; role?: WorkspaceRole } }).user;
+      const uniqueMembers = new Map<string, WorkspaceMember>();
+      for (const [clientId, state] of provider.awareness.getStates()) {
+        const user = (state as { user?: { sessionId?: string; name?: string; role?: WorkspaceRole } }).user;
         const memberRole: WorkspaceRole = user?.role === 'owner' || user?.role === 'viewer' ? user.role : 'editor';
-        return {
+        const sessionId = user?.sessionId?.trim();
+        const member = {
+          id: sessionId || `yjs-${clientId}`,
           name: user?.name?.trim() || '协作者',
           role: memberRole,
         };
-      });
-      setMembers(onlineMembers);
+        if (!uniqueMembers.has(member.id)) uniqueMembers.set(member.id, member);
+      }
+      setMembers(Array.from(uniqueMembers.values()));
     };
 
     updateMembers();

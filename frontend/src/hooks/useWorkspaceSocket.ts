@@ -102,6 +102,13 @@ export default function useWorkspaceSocket({
         },
       }
     );
+    const username = useIDEStore.getState().username || '协作者';
+    provider.awareness.setLocalStateField('user', {
+      sessionId: getSessionIdFromToken(token),
+      name: username,
+      color: stableUserColor(username),
+      role,
+    });
     setYjsState({ ydoc, provider });
     let hasCompletedInitialSync = false;
     const markDirty = (_update: Uint8Array, origin: unknown) => {
@@ -358,4 +365,23 @@ export default function useWorkspaceSocket({
     isYjsSynced,
     isWakingUp
   };
+}
+
+function stableUserColor(username: string): string {
+  let hash = 0;
+  for (const character of username) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
+  return `hsl(${Math.abs(hash) % 360} 68% 48%)`;
+}
+
+/** JWT 载荷本身不含密钥；这里只读取后端签发的稳定会话 ID，绝不广播完整 Token。 */
+function getSessionIdFromToken(token: string): string | undefined {
+  try {
+    const payloadPart = token.split('.')[1];
+    if (!payloadPart) return undefined;
+    const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '='))) as { sessionId?: unknown };
+    return typeof payload.sessionId === 'string' && payload.sessionId ? payload.sessionId : undefined;
+  } catch {
+    return undefined;
+  }
 }

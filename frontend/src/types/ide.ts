@@ -4,6 +4,7 @@ import type { Socket } from 'socket.io-client';
 export type WorkspaceRole = 'owner' | 'editor' | 'viewer';
 
 export type WorkspaceMember = {
+  id: string;
   name: string;
   role: WorkspaceRole;
 };
