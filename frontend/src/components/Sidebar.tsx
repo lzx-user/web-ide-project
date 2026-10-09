@@ -390,9 +390,14 @@ export default function Sidebar({
   return (
     <div className={`workspace-sidebar flex h-full w-full shrink-0 flex-col ${isCollapsed ? 'sidebar-collapsed' : ''}`}>
       <nav className="sidebar-nav" aria-label="工作区导航">
-        <button type="button" onClick={() => setSidebarView('files')} className={`${navClass} ${sidebarView === 'files' ? 'bg-blue-50 text-blue-600' : ''}`} aria-current={sidebarView === 'files' ? 'page' : undefined}>
-          <LayoutDashboard size={17} /><span className="sidebar-label">工作空间</span>
-        </button>
+        <div className="sidebar-workspace-row">
+          <button type="button" onClick={() => setSidebarView('files')} className={`${navClass} min-w-0 flex-1 ${sidebarView === 'files' ? 'bg-blue-50 text-blue-600' : ''}`} aria-current={sidebarView === 'files' ? 'page' : undefined} title="工作空间">
+            <LayoutDashboard size={17} /><span className="sidebar-label">工作空间</span>
+          </button>
+          <button type="button" className="sidebar-inline-collapse" onClick={onToggleCollapsed} aria-label={isCollapsed ? '展开侧边栏' : '收起侧边栏'} title={isCollapsed ? '展开侧边栏' : '收起侧边栏'}>
+            {isCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          </button>
+        </div>
         {aiEnabled ? <button type="button" onClick={onToggleAI} data-active={isAIOpen} className={navClass}>
           <Bot size={17} /><span className="sidebar-label">AI 助手</span>
           <span className="sidebar-label ml-auto rounded-full bg-blue-100 px-2 py-0.5 text-[9px] text-blue-600">Beta</span>
@@ -546,8 +551,8 @@ export default function Sidebar({
             <span className="flex items-center gap-2"><UsersRound size={15} className="text-blue-600" />在线成员</span>
             <span className="text-slate-400">{members.length}</span>
           </div>
-          {members.length > 0 ? members.slice(0, 8).map((member, index) => (
-            <div className="sidebar-member-row" key={`${member.name}-${index}`}>
+          {members.length > 0 ? members.slice(0, 8).map((member) => (
+            <div className="sidebar-member-row" key={member.id}>
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-[10px] font-bold text-blue-700">{member.name.trim().slice(0, 1).toUpperCase() || '协'}</span>
               <span className="min-w-0 flex-1 truncate">{member.name}</span>
               <span className="text-[9px] text-slate-400">{member.role === 'owner' ? '房主' : member.role === 'viewer' ? '只读' : '编辑'}</span>
@@ -556,11 +561,6 @@ export default function Sidebar({
           )) : <p className="pt-2 text-[11px] text-slate-400">正在同步成员状态…</p>}
         </div>
       </div>}
-
-      <button type="button" className="sidebar-collapse-button" onClick={onToggleCollapsed}>
-        {isCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-        <span className="sidebar-label">{isCollapsed ? '展开侧边栏' : '收起侧边栏'}</span>
-      </button>
 
       {menuState.visible && menuState.node && (
         <div style={{ top: menuState.y, left: menuState.x }} className="fixed z-50 flex w-48 flex-col rounded-lg border border-slate-200 bg-white py-1 text-sm text-slate-700 shadow-xl">
