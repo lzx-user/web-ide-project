@@ -122,7 +122,13 @@ export default function AIAssistantPanel({
         <div className="ai-room-card m-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
           <div className="mb-3 flex items-center gap-2 font-semibold text-slate-800"><UsersRound size={16} className="text-blue-600" />房间信息</div>
           <dl className="space-y-2">
-            <div className="flex justify-between gap-3"><dt>房间 ID</dt><dd className="max-w-48 truncate font-medium text-slate-800">{roomId}</dd></div>
+            <div className="flex justify-between gap-3">
+              <dt>房间 ID</dt>
+              <dd className="group relative min-w-0 max-w-48 font-medium text-slate-800">
+                <span tabIndex={0} aria-describedby="ai-room-id-tooltip" className="block cursor-text truncate outline-none focus-visible:rounded focus-visible:ring-2 focus-visible:ring-blue-200">{roomId}</span>
+                <span id="ai-room-id-tooltip" role="tooltip" className="pointer-events-none absolute right-0 top-[calc(100%+6px)] z-40 w-72 max-w-[calc(100vw-3rem)] break-all rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-medium leading-5 text-slate-700 opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">{roomId}</span>
+              </dd>
+            </div>
             <div className="flex justify-between gap-3"><dt>在线成员</dt><dd className="font-medium text-slate-800">{members.length} 人</dd></div>
             <div className="flex justify-between gap-3"><dt>当前文件</dt><dd className="max-w-48 truncate font-medium text-slate-800">{activeFile || '未打开文件'}</dd></div>
           </dl>
@@ -143,21 +149,36 @@ export default function AIAssistantPanel({
             </div>
           )}
 
-          <div className="ai-quick-grid border-b border-slate-100 p-4">
-            {quickPrompts.map((item) => (
-              <button type="button" key={item.title} onClick={() => submitQuickPrompt(item.action, item.title)} className="ai-quick-card">
-                <span className="ai-quick-icon"><CodeXml size={14} /></span>
-                <span><strong>{item.title}</strong><small>{item.description}</small></span>
-              </button>
-            ))}
-          </div>
-
           <div className="grid grid-cols-2 gap-2 border-b border-slate-100 p-3">
-            {actions.map(({ id, title, icon: Icon }) => (
-              <button type="button" key={id} onClick={() => setAction(id)} className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-xs font-medium transition ${action === id ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50/50'}`}>
-                <Icon size={15} />{title}
-              </button>
-            ))}
+            <label className="min-w-0 text-[11px] font-medium text-slate-500">
+              快捷提问
+              <select
+                value=""
+                onChange={(event) => {
+                  const item = quickPrompts.find((promptItem) => promptItem.title === event.target.value);
+                  if (item) submitQuickPrompt(item.action, item.title);
+                }}
+                disabled={isLoading}
+                className="mt-1 block h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="选择快捷提问"
+              >
+                <option value="">选择快捷提问</option>
+                {quickPrompts.map((item) => <option key={item.title} value={item.title}>{item.title}</option>)}
+              </select>
+            </label>
+
+            <label className="min-w-0 text-[11px] font-medium text-slate-500">
+              能力选择
+              <select
+                value={action}
+                onChange={(event) => setAction(event.target.value as AIAction)}
+                disabled={isLoading}
+                className="mt-1 block h-9 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="选择 AI 能力"
+              >
+                {actions.map(({ id, title }) => <option key={id} value={id}>{title}</option>)}
+              </select>
+            </label>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4">

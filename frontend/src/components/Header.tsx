@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { Bot, ChevronDown, Code2, LogOut, Play, Save, Terminal } from 'lucide-react';
 import useIDEStore from '../store/useIDEStore';
 import type { WorkspaceMember, WorkspaceRole } from '../types/ide';
@@ -42,11 +43,29 @@ export default function Header({
   aiEnabled,
   role,
 }: HeaderProps) {
+  const [isRoomMenuOpen, setIsRoomMenuOpen] = useState(false);
+  const roomMenuRef = useRef<HTMLDivElement | null>(null);
   const isTerminalOpen = useIDEStore((state) => state.isTerminalOpen);
   const toggleTerminal = useIDEStore((state) => state.toggleTerminal);
   const hasActiveFile = Boolean(activeFile);
   const canEdit = role !== 'viewer';
   const roleLabel = role === 'owner' ? '房主' : role === 'editor' ? '编辑成员' : '只读成员';
+
+  useEffect(() => {
+    if (!isRoomMenuOpen) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!roomMenuRef.current?.contains(event.target as Node)) setIsRoomMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsRoomMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isRoomMenuOpen]);
 
   return (
     <header className="workspace-header flex shrink-0 items-center justify-between gap-4 px-4 lg:px-7">
@@ -59,11 +78,19 @@ export default function Header({
           </div>
         </div>
         <div className="hidden h-8 w-px bg-slate-200 lg:block" />
-        <button type="button" className="room-chip min-w-0 text-left" title="当前协作房间">
-          <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">房间：</span>
-          <span className="max-w-40 truncate text-sm font-semibold text-slate-700">{roomId}</span>
-          <ChevronDown size={14} className="shrink-0 text-slate-400" />
-        </button>
+        <div ref={roomMenuRef} className="relative min-w-0">
+          <button type="button" className="room-chip min-w-0 text-left" onClick={() => setIsRoomMenuOpen((open) => !open)} aria-expanded={isRoomMenuOpen} aria-haspopup="dialog">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">房间：</span>
+            <span className="max-w-40 truncate text-sm font-semibold text-slate-700">{roomId}</span>
+            <ChevronDown size={14} className={`shrink-0 text-slate-400 transition-transform ${isRoomMenuOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {isRoomMenuOpen ? (
+            <div role="dialog" aria-label="当前房间完整 ID" className="absolute left-0 top-[calc(100%+8px)] z-50 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
+              <p className="text-[11px] font-medium text-slate-400">当前房间 ID</p>
+              <code className="mt-1.5 block break-all rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold leading-5 text-slate-700">{roomId}</code>
+            </div>
+          ) : null}
+        </div>
         <div className="workspace-status hidden xl:inline-flex" title={`控制通道：${isConnected ? '已连接' : '重连中'}；Yjs：${isYjsConnected ? (isYjsSynced ? '已同步' : '同步中') : '离线'}`}>
           <span className={`workspace-status-dot ${isConnected ? '' : '!bg-amber-400'}`} />
           {!isConnected || !isYjsConnected ? '离线草稿，等待同步' : isYjsSynced ? '协同已同步' : '正在同步'}
@@ -71,8 +98,8 @@ export default function Header({
         <span className="hidden rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 lg:inline">{roleLabel}</span>
         <div className="hidden items-center gap-2 xl:flex" aria-label={`在线成员 ${members.length} 人`}>
           <div className="flex -space-x-2">
-            {members.slice(0, 4).map((member, index) => (
-              <span key={`${member.name}-${index}`} title={`${member.name} · ${member.role}`} className="member-avatar">
+            {members.slice(0, 4).map((member) => (
+              <span key={member.id} title={`${member.name} · ${member.role}`} className="member-avatar">
                 {member.name.trim().slice(0, 1).toUpperCase() || '协'}
               </span>
             ))}
