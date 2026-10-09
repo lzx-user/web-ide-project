@@ -10,8 +10,11 @@
 - 文件使用不可变 `document_key` 作为 Y.Text 身份，删除并同名重建不会复用旧内容。
 - Yjs 更新 2 秒合并写快照，`POST /api/save` 可立即持久化并返回版本和保存时间。
 - Monaco 多 model、视图状态、递归删除清理、Awareness 成员与稳定颜色。
+- 支持文件/文件夹重命名与移动、全局文件名和代码内容搜索、搜索结果行跳转及打开标签恢复。
+- 支持手动版本快照与恢复，快照同时保存文件树和 Yjs 文档；普通成员可查看/创建，只有房主可恢复，最多保留 30 个版本。
 - IndexedDB 离线草稿、Socket/Yjs/synced/dirty/saved 状态和 Cmd/Ctrl+S。
 - 代码执行、PTY 终端、AI 默认关闭；生产环境即使误配也不会启用本机执行。
+- AI 通过后端 OpenAI-compatible Chat Completions 接口调用，支持生成、解释、修复、优化和运行错误分析；建议必须由用户确认后才会写入编辑器。
 - 路径、数量、层级、消息体、WebSocket payload 与日志容量限制。
 
 ## 架构
@@ -99,14 +102,34 @@ npm run lint
 - `POST /api/rooms`：创建房间，返回一次性房主/编辑/只读口令。
 - `POST /api/join`：校验 `roomId + accessCode + username`，签发房间 JWT。
 - `POST /api/save`：只相信 JWT 中的 roomId，立即保存当前 Y.Doc。
-- Socket.io：`createFile`、`deleteFile`、`executeCode` 及文件树/输出事件。
+- Socket.io：`createFile`、`deleteFile`、`moveFile`、`listVersions`、`createVersion`、`restoreVersion`、`executeCode` 及文件树/输出事件。
 - Yjs：`/yjs/:roomId?token=...`，URL 房间必须与 Token 房间一致。
 
 ## 安全边界与已知限制
 
 - `ENABLE_CODE_EXECUTION=false`、`ENABLE_TERMINAL=false` 是上线默认值。本项目没有把本机子进程包装成“安全沙箱”。
 - 尚未实现完整账号体系、房间成员管理、Token 撤销、Git 集成、多语言 Runner。
-- AI 仅在后端配置 Key 且显式设置 `VITE_ENABLE_AI=true` 后显示；应用建议前必须确认。
+- AI 需要后端同时设置 `ENABLE_AI=true`、`AI_API_KEY`、兼容接口地址与模型，并在前端设置 `VITE_ENABLE_AI=true`；应用建议前必须确认。
 - 当前自动化测试覆盖基础路径、Token 边界和危险开关；数据库、双浏览器协同与断网恢复仍需按部署验收清单手工验证。
+
+## AI 配置
+
+后端密钥只能配置在 `backend/.env` 或部署平台 Secret，不能使用 `VITE_*` 变量：
+
+```text
+ENABLE_AI=true
+AI_API_KEY=<后端 Secret>
+AI_BASE_URL=https://api.openai.com/v1
+AI_MODEL=<所选模型 ID>
+AI_TIMEOUT_MS=45000
+```
+
+前端只打开入口，不包含密钥：
+
+```text
+VITE_ENABLE_AI=true
+```
+
+未同时启用后端开关和密钥时，健康检查会返回 `ai=disabled`，AI 接口返回 503。
 
 上线步骤见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)，演示和简历材料见 [docs/AUTUMN_RECRUITING.md](docs/AUTUMN_RECRUITING.md)。

@@ -51,6 +51,7 @@ function App() {
   const [isEditorMounted, setIsEditorMounted] = useState(false); // 新增：记录编辑器是否挂载完毕
   const [cursorPosition, setCursorPosition] = useState<CursorPosition>({ line: 1, column: 1 });
   const [selectionLabel, setSelectionLabel] = useState('未选择代码');
+  const [pendingSearchTarget, setPendingSearchTarget] = useState<{ path: string; line: number } | null>(null);
   const terminalOutput = useIDEStore((state) => state.terminalOutput);
 
   const {
@@ -69,6 +70,7 @@ function App() {
     setIsRunning,
     handleCreateFile,
     handleDeleteFile,
+    handleMoveFile,
     handleSave,
     handleRun,
   } = useWorkspaceActions({
@@ -191,6 +193,24 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!pendingSearchTarget || pendingSearchTarget.path !== activeFile || !editorRef.current) return;
+    const timer = window.setTimeout(() => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      editor.setPosition({ lineNumber: pendingSearchTarget.line, column: 1 });
+      editor.revealLineInCenter(pendingSearchTarget.line);
+      editor.focus();
+      setPendingSearchTarget(null);
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [activeFile, pendingSearchTarget]);
+
+  const handleOpenSearchResult = useCallback((path: string, line: number) => {
+    setPendingSearchTarget({ path, line });
+    setActiveFile(path);
+  }, [setActiveFile]);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
@@ -242,6 +262,8 @@ function App() {
         onLeave={handleLeaveRoom}
         onCreateFile={handleCreateFile}
         onDeleteFile={handleDeleteFile}
+        onMoveFile={handleMoveFile}
+        onOpenSearchResult={handleOpenSearchResult}
         provider={provider}
         selectionLabel={selectionLabel}
         onAIRequest={ai.requestAI}

@@ -45,7 +45,7 @@ router.post('/api/ai/assist', rateLimit({ windowMs: 60_000, max: 12, keyPrefix: 
     res.json({ success: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'AI 请求失败';
-    const status = message.includes('AI_API_KEY') ? 503 : 502;
+    const status = message.includes('AI 服务未启用') || message.includes('AI_API_KEY') ? 503 : 502;
     res.status(status).json({ success: false, message });
   }
 });

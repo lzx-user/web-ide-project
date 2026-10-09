@@ -7,7 +7,9 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 // 引入原生的 IndexedDB 离线持久化工具
 import { IndexeddbPersistence } from 'y-indexeddb';
+import { MonacoBinding } from 'y-monaco';
 import type { FileNode, WorkspaceSocket } from '../types/ide';
+import { findNodeByPath } from '../utils/fileTree';
 
 type UseWorkspaceSocketOptions = {
   currentSocket: WorkspaceSocket | null;
@@ -62,6 +64,20 @@ export default function useWorkspaceSocket({
       ? null
       : new IndexeddbPersistence(`room-${roomId}`, ydoc);
 
+    const saveStateKey = STORAGE_KEYS.getSaveStateKey(roomId);
+    try {
+      const persistedSaveState = JSON.parse(localStorage.getItem(saveStateKey) ?? 'null') as {
+        isDirty?: boolean;
+        savedAt?: string | null;
+      } | null;
+      if (persistedSaveState) {
+        useIDEStore.getState().setSaveResult(persistedSaveState.savedAt ?? null);
+        if (persistedSaveState.isDirty) useIDEStore.getState().setDirty(true);
+      }
+    } catch {
+      localStorage.removeItem(saveStateKey);
+    }
+
     indexeddbProvider?.on('synced', () => {
       console.log('[Yjs] 📦 本地离线草稿加载完毕');
     });
@@ -86,12 +102,35 @@ export default function useWorkspaceSocket({
         },
       }
     );
+    const username = useIDEStore.getState().username || '协作者';
+    provider.awareness.setLocalStateField('user', {
+      sessionId: getSessionIdFromToken(token),
+      name: username,
+      color: stableUserColor(username),
+      role,
+    });
     setYjsState({ ydoc, provider });
-    const markDirty = () => {
-      if (role !== 'viewer') useIDEStore.getState().setDirty(true);
+    let hasCompletedInitialSync = false;
+    const markDirty = (_update: Uint8Array, origin: unknown) => {
+      if (role === 'viewer') return;
+
+      // IndexedDB 恢复和 WebSocket 首次同步只是装载已有内容，不是新的用户修改。
+      // MonacoBinding 作为事务 origin 时代表用户在同步完成前已经开始输入，仍需记为未保存。
+      const isLocalEditorChange = origin instanceof MonacoBinding;
+      if (!hasCompletedInitialSync && !isLocalEditorChange) return;
+
+      const state = useIDEStore.getState();
+      state.setDirty(true);
+      localStorage.setItem(
+        saveStateKey,
+        JSON.stringify({ isDirty: true, savedAt: state.savedAt }),
+      );
     };
     const handleYjsStatus = ({ status }: { status: string }) => setIsYjsConnected(status === 'connected');
-    const handleYjsSync = (synced: boolean) => setIsYjsSynced(synced);
+    const handleYjsSync = (synced: boolean) => {
+      setIsYjsSynced(synced);
+      if (synced) hasCompletedInitialSync = true;
+    };
     ydoc.on('update', markDirty);
     provider.on('status', handleYjsStatus);
     provider.on('sync', handleYjsSync);
@@ -146,10 +185,8 @@ export default function useWorkspaceSocket({
 
     // 现在这个方法全权接管了文件的 初始化、新建、删除 的 UI 更新
     const handleInitCodePackage = (codeTree: FileNode[]) => {
-      // 1. 文件树永远可以更新，因为队友新建/删除文件也需要同步到侧边栏
-      setFileList(codeTree);
-
-      const currentActive = useIDEStore.getState().activeFile;
+      const currentState = useIDEStore.getState();
+      const currentActive = currentState.activeFile;
 
       // 修复幽灵文件 Bug：拍平树结构，检查当前 activeFile 是否还在服务器的物理磁盘上
       const flattenPaths = (nodes: FileNode[]): string[] => {
@@ -179,17 +216,43 @@ export default function useWorkspaceSocket({
         return null;
       };
 
+      const findFileByDocumentKey = (nodes: FileNode[], documentKey: string): FileNode | null => {
+        for (const node of nodes) {
+          if (node.type === 'file' && node.documentKey === documentKey) return node;
+          const childMatch = node.children
+            ? findFileByDocumentKey(node.children, documentKey)
+            : null;
+          if (childMatch) return childMatch;
+        }
+        return null;
+      };
+
       const allPaths = flattenPaths(codeTree);
 
-      // 2. 如果当前 activeFile 已经不存在了，必须清掉，防止幽灵文件
+      // 1. 当前路径消失时，先用稳定 documentKey 判断它是否只是被重命名或移动。
       if (currentActive && !allPaths.includes(currentActive)) {
-        // 如果本地记得有个文件，但后端发来的树里没这个文件了（被云端清空或被队友删了）
-        // 必须立刻清空本地认知，防止渲染“幽灵路径”
-        setActiveFile('');
+        const previousActiveNode = findNodeByPath(currentState.fileList, currentActive);
+        const movedActiveNode = previousActiveNode?.documentKey
+          ? findFileByDocumentKey(codeTree, previousActiveNode.documentKey)
+          : null;
+
+        if (movedActiveNode) {
+          // 文件树和当前路径必须原子更新，不能让 CodeEditor 因中间态被卸载。
+          useIDEStore.setState({ fileList: codeTree, activeFile: movedActiveNode.path });
+          localStorage.setItem(STORAGE_KEYS.ACTIVE_FILE, movedActiveNode.path);
+          hasInitializedRef.current = true;
+          return;
+        }
+
+        // documentKey 也不存在才是真删除，清掉幽灵文件。
+        useIDEStore.setState({ fileList: codeTree, activeFile: '' });
         localStorage.removeItem(STORAGE_KEYS.ACTIVE_FILE);
         hasInitializedRef.current = false;
         return;
       }
+
+      // 2. 普通创建/删除/重连只更新文件树。
+      setFileList(codeTree);
 
       // 3. 如果已经初始化过，就不要因为重连再次覆盖用户当前文件
       if (hasInitializedRef.current) {
@@ -302,4 +365,23 @@ export default function useWorkspaceSocket({
     isYjsSynced,
     isWakingUp
   };
+}
+
+function stableUserColor(username: string): string {
+  let hash = 0;
+  for (const character of username) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
+  return `hsl(${Math.abs(hash) % 360} 68% 48%)`;
+}
+
+/** JWT 载荷本身不含密钥；这里只读取后端签发的稳定会话 ID，绝不广播完整 Token。 */
+function getSessionIdFromToken(token: string): string | undefined {
+  try {
+    const payloadPart = token.split('.')[1];
+    if (!payloadPart) return undefined;
+    const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '='))) as { sessionId?: unknown };
+    return typeof payload.sessionId === 'string' && payload.sessionId ? payload.sessionId : undefined;
+  } catch {
+    return undefined;
+  }
 }

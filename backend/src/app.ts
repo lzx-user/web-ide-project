@@ -29,6 +29,7 @@ export default function createApp() {
       success: healthy,
       message: 'Web IDE backend is running',
       database,
+      ai: config.features.ai && config.ai.apiKey ? 'enabled' : 'disabled',
       codeExecution: config.features.codeExecution ? 'development_only' : 'disabled',
       terminal: config.features.terminal ? 'development_only' : 'disabled',
     });

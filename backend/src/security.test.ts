@@ -6,6 +6,7 @@ import { normalizeWorkspacePath } from './repositories/fileRepository.js';
 import { signRoomToken, verifyRoomToken } from './services/authService.js';
 import { safeResolve } from './utils/safePath.js';
 import { canEditWorkspace } from './auth/roles.js';
+import { isRunnableFile } from './services/codeService.js';
 import { isYjsDocumentMutation } from './yjs/yjsServer.js';
 
 test('路径规范化拒绝穿越和绝对路径', () => {
@@ -28,9 +29,18 @@ test('房间 Token 保留会话边界且不能被当成其他房间', () => {
   assert.equal(payload.sessionId, 'session-a');
 });
 
-test('危险功能默认关闭', () => {
-  assert.equal(config.features.codeExecution, false);
+test('危险功能不会在生产环境启用，终端默认关闭', () => {
+  assert.equal(config.features.codeExecution && config.env.isProd, false);
   assert.equal(config.features.terminal, false);
+  assert.equal(config.features.ai, false);
+});
+
+test('本地代码运行仅接受 JavaScript 和 TypeScript 文件', () => {
+  assert.equal(isRunnableFile('src/index.js'), true);
+  assert.equal(isRunnableFile('src/index.ts'), true);
+  assert.equal(isRunnableFile('src/App.tsx'), true);
+  assert.equal(isRunnableFile('package.json'), false);
+  assert.equal(isRunnableFile('README.md'), false);
 });
 
 test('协作角色权限在服务端统一收敛', () => {

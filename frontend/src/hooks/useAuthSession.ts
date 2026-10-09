@@ -18,6 +18,10 @@ export default function useAuthSession() {
   const setRole = useIDEStore((state) => state.setRole);
 
   const clearPersistedState = useCallback(() => {
+    const persistedRoomId = localStorage.getItem(STORAGE_KEYS.ROOM_ID);
+    if (persistedRoomId) {
+      localStorage.removeItem(STORAGE_KEYS.getSaveStateKey(persistedRoomId));
+    }
     localStorage.removeItem(STORAGE_KEYS.TOKEN);
     localStorage.removeItem(STORAGE_KEYS.ROOM_ID);
     localStorage.removeItem(STORAGE_KEYS.IS_JOINED);
